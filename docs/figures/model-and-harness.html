@@ -1,0 +1,142 @@
+<!doctype html>
+<!-- Source for model-and-harness.png, drawn with rough.js and the Excalidraw Virgil font.
+     The page title reports any text that crosses the edge. Re-export from this folder:
+     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --hide-scrollbars \
+       --window-size=1200,820 --force-device-scale-factor=2 --virtual-time-budget=10000 \
+       --screenshot=model-and-harness.png "file://$PWD/model-and-harness.html" -->
+<html><head><meta charset="utf-8">
+<title>Model and harness</title>
+<style>
+  @font-face { font-family: "Virgil"; src: url("https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.17.6/dist/excalidraw-assets/Virgil.woff2") format("woff2"); }
+  html, body { margin: 0; background: #1f2125; }
+  svg { display: block; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/roughjs@4.6.6/bundled/rough.js"></script>
+</head><body>
+<svg id="c" xmlns="http://www.w3.org/2000/svg" width="1200" height="820" viewBox="0 0 1200 820"></svg>
+<script>
+/* Draw the model, the harness, the two triggers and Phoenix as a hand-drawn sketch. */
+const INK = "#e8e8e8", MUTED = "#b8bcc4", BLUE = "#7aa7e0", AMBER = "#e0b04a", VIOLET = "#b39ddb",
+      TEAL = "#6fcf97", CORAL = "#f28b82", FONT = "Virgil, 'Comic Sans MS', cursive";
+const svg = document.getElementById("c");
+const rc = rough.svg(svg);
+let seed = 1;
+
+/** Add one line of handwritten text. */
+function text(x, y, str, size, color = INK, anchor = "middle") {
+  const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  t.setAttribute("x", x); t.setAttribute("y", y);
+  t.setAttribute("font-family", FONT); t.setAttribute("font-size", size);
+  t.setAttribute("fill", color); t.setAttribute("text-anchor", anchor);
+  t.textContent = str;
+  svg.appendChild(t);
+}
+
+/** Add a rough shape to the sketch. */
+function add(node) { svg.appendChild(node); }
+
+/** Draw an arrow head at (x2, y2) pointing away from (x1, y1). */
+function head(x1, y1, x2, y2, color) {
+  const a = Math.atan2(y2 - y1, x2 - x1), len = 16;
+  for (const d of [-0.45, 0.45]) {
+    add(rc.line(x2, y2, x2 - len * Math.cos(a + d), y2 - len * Math.sin(a + d),
+      { stroke: color, strokeWidth: 2.2, roughness: 0.8, seed: seed++ }));
+  }
+}
+
+/** Draw a straight arrow. */
+function arrow(x1, y1, x2, y2, color = INK, dash) {
+  add(rc.line(x1, y1, x2, y2, { stroke: color, strokeWidth: 2.2, roughness: 1, seed: seed++, strokeLineDash: dash }));
+  head(x1, y1, x2, y2, color);
+}
+
+/** Draw a curved arrow through a middle point. */
+function curvedArrow(points, color) {
+  add(rc.curve(points, { stroke: color, strokeWidth: 2, roughness: 0.9, seed: seed++ }));
+  const [p, q] = points.slice(-2);
+  head(p[0], p[1], q[0], q[1], color);
+}
+
+/** Draw a rough box, optionally hatched. */
+function rect(x, y, w, h, color, fill) {
+  add(rc.rectangle(x, y, w, h, { stroke: color, strokeWidth: 2.2, roughness: 1.2, seed: seed++,
+    fill, fillStyle: "hachure", hachureGap: 15, fillWeight: 1, hachureAngle: -41 }));
+}
+
+document.fonts.load('34px "Virgil"').finally(() => {
+  text(60, 60, "The model, the harness, and two ways a run starts", 34, INK, "start");
+
+  // Scheduled tasks: a clock.
+  add(rc.circle(470, 165, 88, { stroke: AMBER, strokeWidth: 2.4, roughness: 1.1, seed: seed++ }));
+  add(rc.line(470, 165, 470, 135, { stroke: AMBER, strokeWidth: 2.4, seed: seed++ }));
+  add(rc.line(470, 165, 492, 177, { stroke: AMBER, strokeWidth: 2.4, seed: seed++ }));
+  text(530, 157, "Scheduled tasks", 28, AMBER, "start");
+  text(530, 187, "heartbeat every 30 min", 20, MUTED, "start");
+  arrow(470, 214, 470, 272, AMBER);
+  text(484, 250, "run", 20, AMBER, "start");
+
+  // User interaction: a phone.
+  rect(95, 300, 110, 190, BLUE);
+  rect(108, 318, 84, 140, BLUE, BLUE + "33");
+  add(rc.circle(150, 474, 12, { stroke: BLUE, strokeWidth: 2, seed: seed++ }));
+  text(150, 525, "User interaction", 26, BLUE);
+  text(150, 553, "on a messaging app", 20, MUTED);
+  arrow(212, 360, 318, 360, BLUE);
+  text(265, 348, "message", 20, BLUE);
+  arrow(318, 430, 212, 430, BLUE);
+  text(265, 458, "reply", 20, BLUE);
+  text(265, 480, "or silence", 18, MUTED);
+
+  // The harness and what it does.
+  rect(330, 282, 520, 350, INK, "#ffffff14");
+  text(590, 322, "The harness: OpenClaw", 30, INK);
+  rect(360, 345, 460, 76, MUTED);
+  text(590, 375, "builds the context", 24, INK);
+  text(590, 403, "instructions · chat history · memory", 19, MUTED);
+  rect(360, 435, 460, 76, MUTED);
+  text(590, 465, "runs the tools", 24, INK);
+  text(590, 493, "files · memory · web · reminders", 19, MUTED);
+  rect(360, 525, 460, 88, MUTED);
+  text(590, 556, "decides what gets delivered", 24, INK);
+  text(590, 586, "only a bare NO_REPLY stays silent", 19, MUTED);
+
+  // The model.
+  rect(965, 390, 185, 120, VIOLET, VIOLET + "33");
+  text(1057, 432, "The model", 28, VIOLET);
+  text(1057, 462, "reads the prompt,", 19, MUTED);
+  text(1057, 486, "writes the reply", 19, MUTED);
+  arrow(856, 420, 958, 420, VIOLET);
+  text(907, 409, "prompt", 18, VIOLET);
+  arrow(958, 482, 856, 482, VIOLET);
+  text(907, 505, "reply", 18, VIOLET);
+
+  // What went wrong, and where.
+  text(905, 292, "a whole day of history", 20, CORAL, "start");
+  text(905, 317, "in every heartbeat:", 20, CORAL, "start");
+  text(905, 342, "188k tokens a call", 20, CORAL, "start");
+  curvedArrow([[898, 312], [860, 334], [826, 372]], CORAL);
+  text(872, 652, "the instruction said", 20, CORAL, "start");
+  text(872, 677, "\"end with NO_REPLY\", so", 20, CORAL, "start");
+  text(872, 702, "reports ending in it", 20, CORAL, "start");
+  text(872, 727, "were delivered", 20, CORAL, "start");
+  curvedArrow([[866, 648], [846, 624], [826, 598]], CORAL);
+
+  // Phoenix watching.
+  add(rc.ellipse(410, 707, 90, 48, { stroke: TEAL, strokeWidth: 2.4, roughness: 1, seed: seed++ }));
+  add(rc.circle(410, 707, 22, { stroke: TEAL, strokeWidth: 2.4, fill: TEAL, fillStyle: "solid", seed: seed++ }));
+  add(rc.line(410, 680, 440, 638, { stroke: TEAL, strokeWidth: 2, strokeLineDash: [7, 9], seed: seed++ }));
+  add(rc.line(440, 682, 560, 638, { stroke: TEAL, strokeWidth: 2, strokeLineDash: [7, 9], seed: seed++ }));
+  text(470, 700, "Phoenix sees every step", 26, TEAL, "start");
+  text(470, 728, "traces · annotations · experiments", 20, MUTED, "start");
+
+  text(1150, 772, "Every fix changes the harness while the model stays the same.", 21, INK, "end");
+  text(1150, 800, "The final test does the reverse: same harness, a different model.", 21, INK, "end");
+  const W = 1200, H = 820, bad = [];
+  for (const t of svg.querySelectorAll("text")) {
+    const b = t.getBBox();
+    if (b.x < 4 || b.y < 4 || b.x + b.width > W - 4 || b.y + b.height > H - 4) bad.push(t.textContent);
+  }
+  document.title = bad.length ? "OVERFLOW: " + bad.join(" | ") : "ready: no overflow";
+});
+</script>
+</body></html>

@@ -1,0 +1,7 @@
+# Offline conversion, the runner and the extractor need only the standard library (Python 3.9+).
+# These are for network export (export_trace.py / import_history.py --export) and for judge_heartbeats.py.
+arize-phoenix-client>=3.5
+arize-phoenix-otel>=0.17
+openai>=1.0
+opentelemetry-proto>=1.30
+protobuf>=5

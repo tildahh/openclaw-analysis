@@ -1,0 +1,39 @@
+{
+  "source": "extract_heartbeats.py over the main session, 2026-09-28, 12:15 AM to 2:45 PM PDT; copied from runs/heartbeat-baseline-20260928T220015Z/transcript-cases/summary.json with local paths removed",
+  "stored_rows": 799,
+  "source_rows_through_cutoff": 618,
+  "unparsed_rows": 181,
+  "send_ok_lines": 65,
+  "send_log_available": true,
+  "redacted": true,
+  "since": "2026-09-28T00:00:00-07:00",
+  "until": "2026-09-28T22:00:15.582310+00:00",
+  "completion_counts": {
+    "complete": 15
+  },
+  "cases": 15,
+  "runtime_silent": 1,
+  "with_output": 14,
+  "sentinel_leaks": 11,
+  "greetings_after_poll": 1,
+  "near_repeats_over_0_8": 9,
+  "with_output_and_no_user_activity": 13,
+  "delivery": {
+    "matched": 0,
+    "none": 15,
+    "unknown": 0
+  },
+  "reactions": {
+    "positive": 0,
+    "negative": 0,
+    "neutral": 1
+  },
+  "output_chars_total": 33534,
+  "duration_s_median": 269.9,
+  "input_tokens_max_median": 210550,
+  "splits": {
+    "tune": 6,
+    "holdout": 8,
+    "silent": 1
+  }
+}
