@@ -1,0 +1,16 @@
+{
+  "id": "phoenix-eval-observer",
+  "name": "Phoenix Conversation Observer",
+  "description": "Observe evaluation and ordinary assistant sessions and enrich native Phoenix traces.",
+  "activation": { "onStartup": true },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "outputDir": { "type": "string", "minLength": 1 },
+      "captureReasoning": { "type": "string", "enum": ["none", "size", "text"], "default": "none" },
+      "sessionScope": { "type": "string", "enum": ["eval", "all"], "default": "eval" },
+      "liveExport": { "type": "boolean", "default": false }
+    }
+  }
+}

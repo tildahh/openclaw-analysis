@@ -1,0 +1,8 @@
+{
+  "name": "phoenix-eval-observer",
+  "version": "1.1.1",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test test-observer.js test-live-trace.js" },
+  "openclaw": { "extensions": ["./index.js"] }
+}
