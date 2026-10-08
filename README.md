@@ -273,7 +273,9 @@ To compare models, run each on the same tasks more than once. I tested six model
 
 *Hardware and [serving settings](#model-observations-and-serving-conditions) differed, so these are results for the tested setups.*
 
-DeepSeek had the highest completion score, 0.89, and took about 3.8 minutes per task. Qwen-3.6 was fastest at about 1.8 minutes, but had the lowest score, 0.59. The appendix explains how the results were calculated.
+DeepSeek had the highest completion score, 0.89, and took about 3.8 minutes per task. I switched my assistant to GLM 5.3 Flash after this comparison: it came close to DeepSeek’s completion score at about half the median time per task.
+
+Qwen-3.6 was the fastest at 1.76 minutes but had the lowest completion score (0.59). Muse 30B was the slowest at 6.28 minutes despite having the fewest total parameters.
 
 <a id="runtime-distribution"></a>
 
@@ -382,20 +384,6 @@ The manual `/new` reset was separate from enabling fresh sessions and had alread
 The later model dashboard includes a replacement run for a Qwen setup failure, so its population differs from the original tool comparison.
 
 Live flight, calendar and web results could change between trials. Workspaces and sessions were reset, but external sources were not frozen. Requests went through a separate evaluation gateway rather than an exact replay of the production chat channel. These limits apply even when the dataset and model were unchanged.
-
-<a id="model-comparison-plot-methodology"></a>
-
-## Model comparison plot methodology
-
-The scatter plot uses the dashboard's nine task IDs and three passes per model. Timing and completion scores are matched by source experiment and run ID, with the task ID checked. The x-axis is the median of all 27 recorded native request durations per model, converted to minutes; these durations exclude setup and agree with the saved run start and end times. The y-axis follows the dashboard: average each task's three completion scores, then average the nine tasks. All six completion totals match the saved dashboard counts.
-
-The completion grid counts scores of 1 within each task's three matched attempts. All saved completion scores are binary, and every cell contains passes 1, 2 and 3. Each column's total divided by 27 equals that model's scatter-plot completion score.
-
-The dashboard replaces Qwen-3.5's failed LoRA setup in pass 3 with its recorded replacement attempt. The plot uses that same replacement's timing and score. DeepSeek's one timeout has no judge verdict, so the dashboard's zero-score rule applies; its recorded 20.11-minute duration remains in the median. Two Muse replies containing only tool-call markup already received completion scores of zero and retain their measured durations. Every selected attempt has a timing value, and none is excluded for failing.
-
-The saved task-completion verdicts carry mixed judge-input revision tags: 42 `v1`, 29 `profile-context-v2` and 90 `profile-model-view-v1`. The remaining attempt is the timeout scored zero by the dashboard. The plot preserves those existing scores; it is not a new evaluation with uniform judge inputs.
-
-<a id="runtime-distribution-methodology"></a>
 
 ## Runtime distribution methodology
 
