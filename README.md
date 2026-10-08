@@ -153,10 +153,6 @@ I added a `heartbeat_condition` annotation to distinguish configurations within 
 | Redundant messages | 5 | 1 | 6 | 0 | 2 |
 | Missed reminders | 0 | 0 | 0 | 2 | 0 |
 
-The timeline shows how context size and message usefulness varied across those phases:
-
-![Heartbeat context size and my usefulness labels for heartbeats 1 through 27, across the original conversation, manual reset, fresh sessions, silence-rule and prompt revisions, and live-source checks.](figures/heartbeat-day-labels.png)
-
 ## Evaluate messages and silences
 
 ### Define when a message is warranted
@@ -270,8 +266,6 @@ Use Phoenix’s comparison view to inspect answers to the same request alongside
 To compare models, run each on the same tasks more than once. I tested six models on nine tasks, with three attempts per task. The plot compares median response time with Phoenix’s task-completion score.
 
 ![Scatter plot of six models by median task time and mean Phoenix task-completion score. Qwen-3.6 35B: 1.76 minutes, 0.59; Qwen-3.5 122B: 2.73 minutes, 0.70; Nemotron 120B: 3.64 minutes, 0.67; Muse 30B: 6.28 minutes, 0.63; GLM 5.3 Flash 320B: 2.08 minutes, 0.78; DeepSeek V4 Flash 284B: 3.81 minutes, 0.89.](figures/model-completion-time.png)
-
-*Hardware and [serving settings](#model-observations-and-serving-conditions) differed, so these are results for the tested setups.*
 
 DeepSeek had the highest completion score, 0.89, and took about 3.8 minutes per task. I switched my assistant to GLM 5.3 Flash after this comparison: it came close to DeepSeek’s completion score at about half the median time per task.
 
