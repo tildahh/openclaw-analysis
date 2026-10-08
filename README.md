@@ -88,7 +88,7 @@ These checks showed that my assistant was copying earlier reports and adding `NO
 
 If your assistant keeps repeating itself, check its conversation history, instructions, and record of previous notifications.
 
-When a scheduled run copies an earlier message, look at whats included in its context. In Phoenix, filter for the `openclaw.context.assembled` span to see how much history was included.
+When a scheduled run copies an earlier message, look at what's included in its context. In Phoenix, filter for the `openclaw.context.assembled` span to see how much history was included.
 
 If each run receives the full conversation, try giving it a fresh session. In OpenClaw’s heartbeat configuration, set:
 
@@ -96,7 +96,7 @@ If each run receives the full conversation, try giving it a fresh session. In Op
 "heartbeat": { "isolatedSession": true }
 ```
 
-I found out that each heartbeat received 338 earlier messages, nearly half a million characters of conversation history. Fresh sessions reduced the context from 188k to 21k tokens and copied text, but didn’t stop all unnecessary messages.
+Fresh sessions cut the context from 188k to 21k tokens and stopped the verbatim copying, but didn’t stop all unnecessary messages.
 
 ![Cropped Phoenix context attributes showing 338 messages, outlined in red, and 492061 characters of conversation history.](figures/heartbeat-context-counts-highlighted.png)
 
@@ -110,7 +110,7 @@ If the assistant says ‘nothing changed’ but still sends a message, check the
 + NO_REPLY means no message reaches the user;  anything else you write is delivered.
 ```
 
-My old instruction allowed a full report before `NO_REPLY`, which was still delivered. After the instruction changes, the assistant stayed quiet more often, but also missed reminders:
+My old instruction allowed a full report before NO_REPLY, which was still delivered:
 
 <table>
   <tr>
@@ -127,9 +127,7 @@ My old instruction allowed a full report before `NO_REPLY`, which was still deli
   </tr>
 </table>
 
-### Check current sources and previous notifications
-
-If the assistant misses a reminder, check whether it actually read the calendar and reminders. Require those checks before it decides whether to notify you. Also check what it has already sent so it doesn’t repeat the same reminder.
+After the change the assistant stayed quiet more often, but also missed reminders. If the assistant misses a reminder, check whether it actually read the calendar and reminders...
 
 After I required calendar and reminder checks, both runs repeated a reminder the assistant had already sent. Next, I’d test a log of sent notifications.
 
@@ -144,7 +142,7 @@ name == "openclaw.model.call" and annotations["heartbeat_phase"].label == "befor
 name == "openclaw.model.call" and annotations["heartbeat_phase"].label == "after_change"
 ```
 
-I added a `heartbeat_condition` annotation to distinguish configurations within the `after_change` group. The table below summarizes the measurements and manually assigned labels for each configuration.
+I added a `heartbeat_condition` annotation to distinguish configurations within the `after_change` group. The table below summarizes the measurements and manually assigned labels for each configuration. 
 
 | Measure | Baseline | Chat reset | Fresh sessions | New instructions | Live checks |
 |---|---|---|---|---|---|
@@ -159,29 +157,13 @@ I added a `heartbeat_condition` annotation to distinguish configurations within 
 
 Check both unnecessary messages and missed reminders. If a run crashes or times out, count it separately from a deliberate choice to stay quiet.
 
-Write labels that reflect what the user needs. I labeled a sample of 27 heartbeats with these six categories:
-
-| Label | Meaning |
-|---|---|
-| `useful` | Something new I wanted now |
-| `somewhat_useful` | Something useful, but buried in a long message |
-| `redundant` | Nothing I needed from this message |
-| `correct_silence` | It correctly stayed quiet |
-| `missed` | It stayed quiet, but something needed my attention |
-| `unsure` | Not enough evidence to decide |
-
+I labeled a sample of 27 heartbeats as useful, `somewhat_useful` (useful but buried in a long message), `redundant`, `correct_silence`, `missed` (stayed quiet when something needed attention), or `unsure`.
 
 ### Check the judge against your labels
 
 Once you’ve labeled the messages, check whether an LLM judge rates them the same way.
 
-I used GPT-6 Sol to evaluate the Qwen assistant’s messages. It agreed with my labels on 20 of 24 heartbeats.
-
-| Check | Result |
-|---|---|
-| Agreement | 83% |
-| Cohen's κ | 0.73 |
-| Agreement from always choosing the most common label `redundant` | 54% |
+I used GPT-6 Sol to evaluate the Qwen assistant’s messages. It agreed with my labels on 20 of 24 heartbeats: 83%, Cohen’s κ 0.73, against 54% for always guessing the most common label.
 
 The four disagreements were:
 
