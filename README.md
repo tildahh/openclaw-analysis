@@ -122,7 +122,7 @@ My old instruction allowed a full report before `NO_REPLY`, which was still deli
     <td><img src="figures/heartbeat-after-no-reply-output.png" width="100%" alt="Cropped Phoenix model-call output after the instruction changes: the whole reply is NO_REPLY."></td>
   </tr>
   <tr>
-    <td>Excerpt from the end of a report. Text before <code>NO_REPLY</code> meant the report was delivered.</td>
+    <td>Text before <code>NO_REPLY</code> meant the report was delivered.</td>
     <td>The whole reply is <code>NO_REPLY</code>, so nothing is sent.</td>
   </tr>
 </table>
