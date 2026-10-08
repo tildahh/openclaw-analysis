@@ -1,22 +1,22 @@
-# Evaluating an always-on OpenClaw assistant with Phoenix
+# Improving an OpenClaw assistant with Phoenix
 
 I run [OpenClaw](https://github.com/openclaw/openclaw), an open-source personal assistant, on my own hardware, with Qwen3.5 122B served from a DGX Spark. Every 30 minutes, a scheduled check, called a heartbeat, wakes it to decide whether anything needs my attention.
 
-Over 13 hours, it sent 19 messages across 27 heartbeats. Fourteen repeated information, and five buried something useful in a long message. One even greeted me and asked what I wanted to do next, as if its scheduled check were a message from me.
+My assistant kept repeating old information or burying useful updates in long messages. Other users have reported similar problems: in one [GitHub issue](https://github.com/openclaw/openclaw/issues/142588), 26 of 27 scheduled checks sent messages about what the assistant planned to do, without providing a result.
 
-I used Phoenix to inspect the assistant’s runs, test changes to its context and instructions, and compare six models on everyday tasks. I also checked whether automated judges caught the errors in their answers. Giving each heartbeat a fresh session reduced the median first-call context from 188k to 21k tokens compared with the original baseline.
+I used [Phoenix](https://github.com/Arize-ai/phoenix) to improve the assistant, by testing changes to its context and instructions, and compare six models on my everyday tasks. In addition I tracked metrics using LLM judges across dimensions such as task completion, tool use, and retrieval relevance to help identify what needed improvement. 
 
 ## How the assistant works
 
 ![A hand-drawn diagram: messages and scheduled heartbeats start OpenClaw runs. OpenClaw builds context and runs tools, sending context and tool results to the model and receiving tool calls or answers. Phoenix records model calls, tool calls and outputs.](figures/model-and-harness-v2.png)
 
-OpenClaw gives the model its instructions, files, and conversation history. When the model requests a tool, OpenClaw runs it and passes the result back. The software managing this process is called the harness.
+OpenClaw (the harness) gives the model its instructions, files, and conversation history. When the model requests a tool, OpenClaw runs it and passes the result back.
 
 A simplified version of the loop:
 
 ```python
 def run_assistant(trigger):
-    """Run the assistant and apply the application's delivery rule."""
+    """Run the assistant"""
     context = build_prompt(trigger)
     while True:
         reply = model(context, tools)
@@ -33,13 +33,9 @@ def run_assistant(trigger):
 
 A trace shows the recorded steps in an assistant run, such as model calls and tool calls. Each step is called a span. Phoenix lets you inspect these steps together to find where something went wrong.
 
-Start by connecting OpenClaw to Phoenix. Add your Phoenix API key to `~/.openclaw/.env`:
+To start, add your `PHOENIX_API_KEY` key to `~/.openclaw/.env`.
 
-```bash
-PHOENIX_API_KEY=your-phoenix-api-key
-```
-
-Add `diagnostics` to `~/.openclaw/openclaw.json`, replace `<space>` with your Phoenix space, and then restart with `openclaw gateway restart`:
+Then add `diagnostics` to `~/.openclaw/openclaw.json`, replace `<space>` with your Phoenix space, and then restart with `openclaw gateway restart`:
 
 ```json
 {
@@ -57,9 +53,9 @@ Add `diagnostics` to `~/.openclaw/openclaw.json`, replace `<space>` with your Ph
 }
 ```
 
-OpenClaw could send traces to Phoenix, but important details were missing or hard to identify. [OpenInference](https://github.com/Arize-ai/openinference) defines standard fields that help Phoenix display the conversation and tool calls clearly.
+OpenClaw can send traces to Phoenix, but out of the box it wouldn't surface conversations end-to-end. It's based on the [OpenInference](https://github.com/Arize-ai/openinference) framework so I made an [observer plugin](observer/) so conversations and heartbeats would show up as independent sessions. I also made several quality of life improvements, so tools wouldn't show up under the same generic tool name. 
 
-I made an [observer plugin](observer/) and updated the exporter to include those details. Follow the [setup guide](docs/live-conversation-exporter.md) to use the integration, then run a request and inspect its trace in Phoenix.
+*I made this [setup guide](docs/live-conversation-exporter.md) on how get started with the plugin.*
 
 | Trace detail | Native Phoenix export | My export |
 |---|---|---|
@@ -70,17 +66,14 @@ I made an [observer plugin](observer/) and updated the exporter to include those
 | Token counts | Aggregate usage only | Recorded without counting the same usage twice |
 | Recorded reasoning | Not exported | Optional |
 
-In one interaction with five model calls and nine tool calls, the original export gave each tool call the same generic name. The updated export showed the request and answer at the root, named each tool, and grouped the interaction by session.
 
 ## Start with simple checks
 
-Start with checks you can automate: reply format, repeated text, token counts, and tool calls. This [extraction script](scripts/extract_heartbeats.py) collects heartbeat replies and usage data and removes recognized contact and credential patterns.
+Start with checks you can automate: reply format, repeated text, token counts, and tool calls. This [extraction script](scripts/extract_heartbeats.py) collects heartbeat replies and usage data and removes recognized contact and credential patterns (replace `user@host` with the SSH destination for the machine running OpenClaw.).
 
 ```bash
 python3 -m scripts.extract_heartbeats --host user@host --since YYYY-MM-DD
 ```
-
-Replace `user@host` with the SSH destination for the machine running OpenClaw. To read a local database copy, replace `--host user@host` with `--local-db path/to/copy.db`.
 
 | Question | What to inspect or measure |
 |---|---|
@@ -89,29 +82,27 @@ Replace `user@host` with the SSH destination for the machine running OpenClaw. T
 | How much context did it receive? | Read the input-token count for each model call. |
 | Did it check the calendar and reminders? | Look for those tool calls in the trace. |
 
-These checks showed that my assistant was copying earlier reports and adding `NO_REPLY` at the end. I looked next at its conversation history and instructions.
+These checks showed that my assistant was copying earlier reports and adding `NO_REPLY` at the end.
 
 ## Reduce repeated and unnecessary messages
 
 If your assistant keeps repeating itself, check its conversation history, instructions, and record of previous notifications.
 
-### Check what context each run receives
+When a scheduled run copies an earlier message, look at whats included in its context. In Phoenix, filter for the `openclaw.context.assembled` span to see how much history was included.
 
-When a scheduled run copies an earlier report, look for that report in the model’s input. In Phoenix, open the `openclaw.context.assembled` span to see how much history was included.
-
-If each run receives the full conversation, try giving it a fresh session. In OpenClaw’s heartbeat configuration, use:
+If each run receives the full conversation, try giving it a fresh session. In OpenClaw’s heartbeat configuration, set:
 
 ```json
 "heartbeat": { "isolatedSession": true }
 ```
 
-My heartbeat was receiving 338 previous messages preloaded in the context window, nearly half a million characters of history. Fresh sessions reduced the context and copied text, but didn’t stop all unnecessary messages. The assistant also made more tool calls because it had to reread its notes.
+I found out that each heartbeat received 338 earlier messages, nearly half a million characters of conversation history. Fresh sessions reduced the context from 188k to 21k tokens and copied text, but didn’t stop all unnecessary messages.
 
 ![Cropped Phoenix context attributes showing 338 messages, outlined in red, and 492061 characters of conversation history.](figures/heartbeat-context-counts-highlighted.png)
 
 ### Match instructions to the delivery rule
 
-If the assistant writes “nothing changed” but still sends a report, check how the application suppresses delivery. Compare that rule with the exact final output in the trace. OpenClaw requires the entire reply to be `NO_REPLY`, so the instruction should specify that format:
+If the assistant says ‘nothing changed’ but still sends a message, check the rule for staying silent. OpenClaw sends nothing only when the entire reply is NO_REPLY. Make that explicit in the instructions:
 
 ```diff
 - For no meaningful change, end with exactly `NO_REPLY`.
@@ -138,7 +129,7 @@ My old instruction allowed a full report before `NO_REPLY`, which was still deli
 
 ### Check current sources and previous notifications
 
-If the assistant misses a reminder, inspect its tool calls to see whether it checked current calendar and reminder data before deciding to stay quiet. Require those lookups when the decision depends on current commitments. Then check whether the proposed notification was already sent. A reminder can be current and still be a repeat.
+If the assistant misses a reminder, check whether it actually read the calendar and reminders. Require those checks before it decides whether to notify you. Also check what it has already sent so it doesn’t repeat the same reminder.
 
 After I required calendar and reminder checks, both runs repeated a reminder the assistant had already sent. Next, I’d test a log of sent notifications.
 
@@ -170,7 +161,7 @@ The timeline shows how context size and message usefulness varied across those p
 
 ### Define when a message is warranted
 
-An assistant can send too many messages and still miss an important reminder. Review both its messages and its completed silent responses. A missing answer or timeout is an execution failure, not evidence that the assistant correctly chose silence.
+Check both unnecessary messages and missed reminders. If a run crashes or times out, count it separately from a deliberate choice to stay quiet.
 
 Write labels that reflect what the user needs. I labeled a sample of 27 heartbeats with these six categories:
 
@@ -221,8 +212,6 @@ I reviewed another 23 heartbeats the next day. All used tools, and none appended
 | Redundant | 100% | 30% |
 | Somewhat useful | 0% | 70% |
 
-The assistant followed the delivery rule, but still sent long messages. One included a meeting reminder generated about 14 minutes before the meeting.
-
 ## Build a repeatable test set
 
 Test changes on the same set of requests so you can see what improves and what gets worse. Choose tasks that use different tools, and write down what a good answer needs to include before running them.
@@ -264,11 +253,9 @@ Check tasks that already worked as well as the problem you wanted to fix. My wee
 | --- | --- | --- |
 | Reading-list result | Six individual reading links, grouped into two to read and four to skim. | No individual reading links; directed me to sign in to the course website myself. |
 
-The original run opened the course guide and reading list. The revised run stopped at truncated document indexes and never opened either document. Next, I’d require it to follow the index links and finish incomplete reads, then rerun the full test set.
+The original run opened the course guide and reading list. The revised run only read shortened lists of available documents and never opened the documents themselves. Next, I’d tell it to follow those links and read the full documents, then repeat the tests.
 
-Next, I tested whether better tools would help with the remaining problems.
-
-### Test whether new tools improve the answer
+### Test whether new tools improve the assistant
 
 When the assistant lacks information, add a tool that can retrieve it. Then check whether it uses it correctly.
 
