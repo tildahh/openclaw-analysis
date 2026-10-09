@@ -90,6 +90,10 @@ If your assistant keeps repeating itself, check its conversation history, instru
 
 When a scheduled run copies an earlier message, look at what's included in its context. In Phoenix, filter for the `openclaw.context.assembled` span to see how much history was included.
 
+Each heartbeat received 338 earlier messages, nearly half a million characters of conversation history.
+
+![Cropped Phoenix context attributes showing 338 messages, outlined in red, and 492061 characters of conversation history.](figures/heartbeat-context-counts-highlighted.png)
+
 If each run receives the full conversation, try giving it a fresh session. In OpenClaw’s heartbeat configuration, set:
 
 ```json
@@ -97,8 +101,6 @@ If each run receives the full conversation, try giving it a fresh session. In Op
 ```
 
 Fresh sessions cut the context from 188k to 21k tokens and stopped the verbatim copying, but didn’t stop all unnecessary messages.
-
-![Cropped Phoenix context attributes showing 338 messages, outlined in red, and 492061 characters of conversation history.](figures/heartbeat-context-counts-highlighted.png)
 
 ### Match instructions to the delivery rule
 
@@ -127,7 +129,7 @@ My old instruction allowed a full report before NO_REPLY, which was still delive
   </tr>
 </table>
 
-After the change the assistant stayed quiet more often, but also missed reminders. If the assistant misses a reminder, check whether it actually read the calendar and reminders...
+After the change the assistant stayed quiet more often, but also missed reminders. If the assistant misses a reminder, check whether it actually read the calendar and reminders.
 
 After I required calendar and reminder checks, both runs repeated a reminder the assistant had already sent. Next, I’d test a log of sent notifications.
 
@@ -157,7 +159,7 @@ I added a `heartbeat_condition` annotation to distinguish configurations within 
 
 Check both unnecessary messages and missed reminders. If a run crashes or times out, count it separately from a deliberate choice to stay quiet.
 
-I labeled a sample of 27 heartbeats as useful, `somewhat_useful` (useful but buried in a long message), `redundant`, `correct_silence`, `missed` (stayed quiet when something needed attention), or `unsure`.
+I labeled a sample of 27 heartbeats as useful, `somewhat_useful` (`useful` but buried in a long message), `redundant`, `correct_silence`, `missed` (stayed quiet when something needed attention), or `unsure`.
 
 ### Check the judge against your labels
 
@@ -267,7 +269,7 @@ The task breakdown shows where those scores differ. Each cell counts how many of
 
 [![Task-by-model completion grid with nine task rows and six model columns. Each cell shows 0/3 through 3/3 attempts marked complete. Study planning has only two completions across all models. GLM and DeepSeek have 3/3 for weekly course readings; the other models have 0/3 or 1/3.](figures/task-completion-grid.png)](figures/task-completion-grid.png)
 
-*Darker cells mean more attempts marked complete. The grid uses the scatter plot's [matched attempts and failure handling](#model-comparison-plot-methodology), with the same hardware and serving differences.*
+*Darker cells mean more attempts marked complete.*
 
 Study planning received low completion scores across all six setups. GLM and DeepSeek were the only models marked complete on all three weekly-reading attempts.
 
