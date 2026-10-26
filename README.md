@@ -1,18 +1,16 @@
-# Improving an OpenClaw assistant with Phoenix
+# Improving an OpenClaw assistant using observability, telemetry and LLM-judges
 
-I run [OpenClaw](https://github.com/openclaw/openclaw), an open-source personal assistant, on my own hardware, with Qwen3.5 122B served from a DGX Spark. Every 30 minutes, a scheduled check, called a heartbeat, wakes it to decide whether anything needs my attention.
+I run [OpenClaw](https://github.com/openclaw/openclaw), an open-source personal assistant, on my own hardware, with a locally hosted LLM served from a DGX Spark. Every 30 minutes, a scheduled check, called a heartbeat, wakes it to decide whether anything needs my attention.
 
 My assistant kept repeating old information or burying useful updates in long messages. Other users have reported similar problems: in one [GitHub issue](https://github.com/openclaw/openclaw/issues/142588), 26 of 27 scheduled checks sent messages about what the assistant planned to do, without providing a result.
 
-I used [Phoenix](https://github.com/Arize-ai/phoenix) to improve the assistant, by testing changes to its context and instructions, and compare six models on my everyday tasks. In addition I tracked metrics using LLM judges across dimensions such as task completion, tool use, and retrieval relevance to help identify what needed improvement. 
+I used [Phoenix](https://github.com/Arize-ai/phoenix), an open-source observability platform to improve the assistant, by testing changes to its context and instructions, and compare six models on personally relevant everyday tasks. I'll walk you through how I adopted Phoenix to work on this task, since it was not compatible with OpenClaw out-of-the-box, as well as the experiments, metrics, and LLM-judges I used to identify what would drive improvement. 
 
 ## How the assistant works
 
 ![A hand-drawn diagram: messages and scheduled heartbeats start OpenClaw runs. OpenClaw builds context and runs tools, sending context and tool results to the model and receiving tool calls or answers. Phoenix records model calls, tool calls and outputs.](figures/model-and-harness-v2.png)
 
-OpenClaw (the harness) gives the model its instructions, files, and conversation history. When the model requests a tool, OpenClaw runs it and passes the result back.
-
-A simplified version of the loop:
+OpenClaw (the harness) gives the model its instructions, files, and conversation history. Below is a simplified version of the loop:
 
 ```python
 def run_assistant(trigger):
@@ -29,23 +27,76 @@ def run_assistant(trigger):
     send_to_chat(reply)
 ```
 
-## See what your assistant is doing
+## Observability
 
-A trace shows the recorded steps in an assistant run, such as model calls and tool calls. Each step is called a span. Phoenix lets you inspect these steps together to find where something went wrong.
+A trace shows the trajectory of steps an agent in one turn, including reasoning, tool calls and tool results. Enabling tracing is critical for assessing the performance of our agents.
 
-To start, add your `PHOENIX_API_KEY` key to `~/.openclaw/.env`.
+### Set up Tracing
 
-Then add `diagnostics` to `~/.openclaw/openclaw.json`, replace `<space>` with your Phoenix space, and then restart with `openclaw gateway restart`:
+Below we'll walk you through the two installation options:
+
+- **Cloud:** Your traces are stored in a Phoenix cloud environment hosted by Arize.
+- **Local:** Phoenix will run and store traces locally (this setup requires Docker).
+  
+*These examples enable captureContent, which can store prompts, responses, and tool inputs and outputs in Phoenix. For Phoenix Cloud, that content is sent to Arize’s hosted service.*
+
+Before you get started back up your current configuration:
+
+```bash
+cp ~/.openclaw/openclaw.json ~/.openclaw/openclaw.json.bak.$(date +%Y%m%d-%H%M%S)
+```
+
+Next install and enable the OpenTelemetry plugin:
+
+```bash
+openclaw plugins install @openclaw/diagnostics-otel
+# enable it
+openclaw plugins enable diagnostics-otel
+# check which plugins are installed
+openclaw plugins list
+```
+
+<details open>
+<summary><strong>Phoenix Cloud installation steps</strong></summary>
+
+### 1. Create your API key
+
+Open your Phoenix Cloud space at [app.phoenix.arize.com](https://app.phoenix.arize.com), then go to **Settings** to create an API key and find your collector endpoint.
+
+Add your `PHOENIX_API_KEY` key to `~/.openclaw/.env`
+
+```bash
+nano ~/.openclaw/.env
+```
+
+Keep this file out of version control. If it’s inside a Git repository, add it to .gitignore.
+
+### 2. Configure tracing
+
+Open your OpenClaw configuration:
+
+```bash
+nano ~/.openclaw/openclaw.json
+```
+
+Merge the following `diagnostics` section into the existing top-level JSON object. **Do not replace your entire configuration.**
+
+Replace `<space>` with your Phoenix space identifier.
 
 ```json
 {
   "diagnostics": {
+    "enabled": true,
     "otel": {
       "enabled": true,
       "protocol": "http/protobuf",
       "tracesEndpoint": "https://app.phoenix.arize.com/s/<space>/v1/traces",
-      "headers": { "Authorization": "Bearer ${PHOENIX_API_KEY}" },
+      "headers": {
+        "Authorization": "Bearer ${PHOENIX_API_KEY}"
+      },
       "traces": true,
+      "metrics": false,
+      "logs": false,
       "sampleRate": 1,
       "captureContent": true
     }
@@ -53,7 +104,72 @@ Then add `diagnostics` to `~/.openclaw/openclaw.json`, replace `<space>` with yo
 }
 ```
 
-OpenClaw can send traces to Phoenix, but out of the box it wouldn't surface conversations end-to-end. It's based on the [OpenInference](https://github.com/Arize-ai/openinference) framework so I made an [observer plugin](observer/) so conversations and heartbeats would show up as independent sessions. I also made several quality of life improvements, so tools wouldn't show up under the same generic tool name. 
+Keep `${PHOENIX_API_KEY}` exactly as shown. OpenClaw reads the value from its environment.
+
+</details>
+
+<details>
+<summary><strong>Local installation steps</strong></summary>
+
+### 1. Start Phoenix
+
+Ensure Docker is running. Create a persistent data volume and start Phoenix:
+
+```bash
+docker volume create phoenix-local-data
+
+docker run -d \
+  --name phoenix-local \
+  -p 127.0.0.1:6006:6006 \
+  -e PHOENIX_WORKING_DIR=/mnt/data \
+  -v phoenix-local-data:/mnt/data \
+  arizephoenix/phoenix:latest
+```
+
+This exposes Phoenix only on your own machine. Open [http://127.0.0.1:6006](http://127.0.0.1:6006) to view the interface.
+
+### 2. Configure tracing
+
+Open your OpenClaw configuration:
+
+```bash
+nano ~/.openclaw/openclaw.json
+```
+
+Merge the following `diagnostics` section into the existing top-level JSON object.
+
+```json
+{
+  "diagnostics": {
+    "enabled": true,
+    "otel": {
+      "enabled": true,
+      "protocol": "http/protobuf",
+      "tracesEndpoint": "http://127.0.0.1:6006/v1/traces",
+      "traces": true,
+      "metrics": false,
+      "logs": false,
+      "sampleRate": 1,
+      "captureContent": true
+    }
+  }
+}
+```
+
+The localhost endpoint assumes the OpenClaw gateway and Phoenix are on the same host. A gateway running inside a separate container needs a container-reachable endpoint instead.
+
+</details>
+
+After completion, validate and restart the gateway:
+
+```bash
+openclaw config validate
+openclaw gateway restart
+```
+
+### Making Phoenix work with OpenClaw 
+
+Out of the box Phoenix won't surface conversations as coherent end-to-end units. It's based on the [OpenInference](https://github.com/Arize-ai/openinference) framework so I made an [observer plugin](observer/) so conversations and heartbeats would show up as independent sessions. I also made several quality of life improvements, so all tools wouldn't have the same generic tool name. 
 
 *I made this [setup guide](docs/live-conversation-exporter.md) on how get started with the plugin.*
 
@@ -112,7 +228,7 @@ If the assistant says ‘nothing changed’ but still sends a message, check the
 + NO_REPLY means no message reaches the user;  anything else you write is delivered.
 ```
 
-My old instruction allowed a full report before NO_REPLY, which was still delivered:
+My old instruction allowed a full status report before `NO_REPLY`, which caused it to still be delivered:
 
 <table>
   <tr>
