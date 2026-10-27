@@ -5,22 +5,30 @@ import { join } from "node:path";
 import test from "node:test";
 import plugin, { buildRecord, createObserver, extractReasoning, redactText, resolveScope, sanitizeValue, writeRecord } from "./index.js";
 
-const CONTEXT = { agentId: "minilda", sessionKey: "agent:minilda:phoenix-eval-case1", sessionId: "session1", runId: "run1" };
+const CONTEXT = { agentId: "agent-a", sessionKey: "agent:agent-a:phoenix-eval-case1", sessionId: "session1", runId: "run1" };
+const OPTIONS = { agentId: "agent-a" };
 
 test("scope rejects ordinary, empty, mismatched and incomplete sessions", () => {
   for (const context of [
-    {}, { ...CONTEXT, sessionKey: "agent:minilda:main" },
-    { ...CONTEXT, sessionKey: "agent:minilda:phoenix-eval-" },
+    {}, { ...CONTEXT, sessionKey: "agent:agent-a:main" },
+    { ...CONTEXT, sessionKey: "agent:agent-a:phoenix-eval-" },
     { ...CONTEXT, agentId: "other" }, { ...CONTEXT, runId: undefined },
     { ...CONTEXT, sessionKey: "agent:other:phoenix-eval-case1" },
-  ]) assert.equal(resolveScope({}, context), null);
-  assert.deepEqual(resolveScope({}, CONTEXT), { ...CONTEXT, trace: undefined });
+  ]) assert.equal(resolveScope({}, context, OPTIONS), null);
+  assert.deepEqual(resolveScope({}, CONTEXT, OPTIONS), { ...CONTEXT, trace: undefined });
+});
+
+test("scope follows the configured agent ID and admits nothing without one", () => {
+  assert.equal(resolveScope({}, CONTEXT), null);
+  assert.equal(resolveScope({}, CONTEXT, { agentId: "agent-b" }), null);
+  const other = { ...CONTEXT, agentId: "agent-b", sessionKey: "agent:agent-b:phoenix-eval-case1" };
+  assert.deepEqual(resolveScope({}, other, { agentId: "agent-b" }), { ...other, trace: undefined });
 });
 
 test("model timing hooks scope from session identity when core omits agentId", () => {
   const event = { runId: "run1", sessionKey: CONTEXT.sessionKey, sessionId: "session1", callId: "call1" };
-  assert.equal(resolveScope(event, {})?.agentId, "minilda");
-  assert.equal(resolveScope(event, { agentId: "other" }), null);
+  assert.equal(resolveScope(event, {}, OPTIONS)?.agentId, "agent-a");
+  assert.equal(resolveScope(event, { agentId: "other" }, OPTIONS), null);
 });
 
 test("visible history survives while system prompts, reasoning and images never appear", () => {
@@ -39,7 +47,7 @@ test("visible history survives while system prompts, reasoning and images never 
     ],
   };
   const original = structuredClone(event);
-  const record = buildRecord("llm_input", event, CONTEXT, "2026-09-28T00:00:00Z");
+  const record = buildRecord("llm_input", event, CONTEXT, "2026-01-01T00:00:00Z", OPTIONS);
   const text = JSON.stringify(record);
   assert.equal(record.event.systemPromptChars, event.systemPrompt.length);
   assert.match(record.event.systemPromptSha256, /^[0-9a-f]{64}$/);
@@ -50,9 +58,9 @@ test("visible history survives while system prompts, reasoning and images never 
 });
 
 test("explicit hook fields exclude raw assistant, full terminal messages and arbitrary extras", () => {
-  const output = buildRecord("llm_output", { assistantTexts: ["Done"], usage: { input: 9, output: 3 }, lastAssistant: { thinking: "hidden" }, extra: "hidden" }, CONTEXT);
+  const output = buildRecord("llm_output", { assistantTexts: ["Done"], usage: { input: 9, output: 3 }, lastAssistant: { thinking: "hidden" }, extra: "hidden" }, CONTEXT, undefined, OPTIONS);
   assert.deepEqual(output.event, { assistantTexts: ["Done"], usage: { input: 9, output: 3 } });
-  const terminal = buildRecord("agent_end", { success: true, durationMs: 12, messages: ["hidden"] }, CONTEXT);
+  const terminal = buildRecord("agent_end", { success: true, durationMs: 12, messages: ["hidden"] }, CONTEXT, undefined, OPTIONS);
   assert.deepEqual(terminal.event, { success: true, durationMs: 12 });
 });
 
@@ -66,12 +74,12 @@ test("reasoning is omitted by default, sized on request, and captured as text on
   assert.deepEqual(extractReasoning(lastAssistant), { chars: 48 + 15 + 22, texts: ["Server-side reasoning.", "First thought about api_key=sk-abcdefghijklmnop.", "Second thought."] });
   assert.deepEqual(extractReasoning({ thinking: "plain" }), { chars: 5, texts: ["plain"] });
   assert.deepEqual(extractReasoning(undefined), { chars: 0, texts: [] });
-  const none = buildRecord("llm_output", event, CONTEXT, "2026-09-28T00:00:00Z");
+  const none = buildRecord("llm_output", event, CONTEXT, "2026-01-01T00:00:00Z", OPTIONS);
   assert.deepEqual(Object.keys(none.event).sort(), ["assistantTexts", "usage"]);
-  const size = buildRecord("llm_output", event, CONTEXT, "2026-09-28T00:00:00Z", { captureReasoning: "size" });
+  const size = buildRecord("llm_output", event, CONTEXT, "2026-01-01T00:00:00Z", { ...OPTIONS, captureReasoning: "size" });
   assert.equal(size.event.reasoningChars, 85);
   assert.equal(size.event.reasoningTexts, undefined);
-  const text = buildRecord("llm_output", event, CONTEXT, "2026-09-28T00:00:00Z", { captureReasoning: "text" });
+  const text = buildRecord("llm_output", event, CONTEXT, "2026-01-01T00:00:00Z", { ...OPTIONS, captureReasoning: "text" });
   assert.equal(text.event.reasoningTexts.length, 3);
   assert.match(JSON.stringify(text.event.reasoningTexts), /Second thought/);
   assert.doesNotMatch(JSON.stringify(text.event.reasoningTexts), /sk-abcdefghijklmnop/);
@@ -100,9 +108,9 @@ test("long text explicitly identifies omitted evidence", () => {
 test("scope guard runs before inspecting content and capture never changes a tool result", () => {
   const event = {};
   Object.defineProperty(event, "prompt", { get() { throw new Error("must not inspect"); } });
-  assert.equal(buildRecord("llm_input", event, { sessionKey: "agent:minilda:main" }), null);
+  assert.equal(buildRecord("llm_input", event, { sessionKey: "agent:agent-a:main" }, undefined, OPTIONS), null);
   const rows = [];
-  const callback = createObserver("before_tool_call", "/unused", null, (_, row) => rows.push(row));
+  const callback = createObserver("before_tool_call", "/unused", null, (_, row) => rows.push(row), OPTIONS);
   const params = { path: "/tmp/fixture" };
   assert.equal(callback({ toolName: "read", params }, CONTEXT), undefined);
   assert.deepEqual(params, { path: "/tmp/fixture" });
@@ -111,10 +119,10 @@ test("scope guard runs before inspecting content and capture never changes a too
 
 test("I/O and logger failures cannot block a before-tool hook or leak error details", () => {
   const warnings = [];
-  const callback = createObserver("before_tool_call", "/unused", { warn: (message) => warnings.push(message) }, () => { throw new Error("SECRET path and input"); });
+  const callback = createObserver("before_tool_call", "/unused", { warn: (message) => warnings.push(message) }, () => { throw new Error("SECRET path and input"); }, OPTIONS);
   assert.equal(callback({ toolName: "read", params: {} }, CONTEXT), undefined);
   assert.deepEqual(warnings, ["phoenix-eval-observer: local capture failed for before_tool_call"]);
-  const brokenLogger = createObserver("before_tool_call", "/unused", { warn() { throw Error("logger failed"); } }, () => { throw Error("I/O failed"); });
+  const brokenLogger = createObserver("before_tool_call", "/unused", { warn() { throw Error("logger failed"); } }, () => { throw Error("I/O failed"); }, OPTIONS);
   assert.doesNotThrow(() => brokenLogger({ toolName: "read" }, CONTEXT));
 });
 
@@ -122,7 +130,7 @@ test("records append privately and refuse a destination symlink", () => {
   const parent = mkdtempSync(join(tmpdir(), "phoenix-observer-"));
   const directory = join(parent, "records");
   try {
-    const record = buildRecord("agent_end", { success: true }, CONTEXT);
+    const record = buildRecord("agent_end", { success: true }, CONTEXT, undefined, OPTIONS);
     writeRecord(directory, record);
     writeRecord(directory, record);
     const filename = join(directory, readdirSync(directory)[0]);
@@ -140,7 +148,15 @@ test("records append privately and refuse a destination symlink", () => {
 
 test("plugin registers exactly the seven passive capture callbacks", () => {
   const hooks = [];
-  plugin.register({ pluginConfig: {}, on: (hook, callback) => hooks.push([hook, callback]) });
+  plugin.register({ pluginConfig: { agentId: "agent-a" }, on: (hook, callback) => hooks.push([hook, callback]) });
   assert.deepEqual(hooks.map(([hook]) => hook), ["llm_input", "llm_output", "before_tool_call", "after_tool_call", "model_call_started", "model_call_ended", "agent_end"]);
   for (const [, callback] of hooks) assert.equal(callback({}, {}), undefined);
+});
+
+test("plugin registers nothing and warns when no agent ID is configured", () => {
+  const hooks = [];
+  const warnings = [];
+  plugin.register({ pluginConfig: {}, logger: { warn: (message) => warnings.push(message) }, on: (hook) => hooks.push(hook) });
+  assert.deepEqual(hooks, []);
+  assert.equal(warnings.length, 1);
 });

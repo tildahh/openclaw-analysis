@@ -6,7 +6,7 @@ and (best effort) whether a Telegram send followed. Run it from the MacBook; the
 executes on the Mac mini over SSH because the SQLite store lives there.
 
     python3 -m scripts.extract_heartbeats --inspect 5          # look at the stored event shape first
-    python3 -m scripts.extract_heartbeats --since 2026-09-21    # write runs/heartbeats-<stamp>/cases.{jsonl,csv}
+    python3 -m scripts.extract_heartbeats --since 2026-01-01    # write runs/heartbeats-<stamp>/cases.{jsonl,csv}
     python3 -m scripts.extract_heartbeats --local-db copy.db    # same logic against a local copy
 
 Labels go into the CSV's empty columns (decision, poll_treated_as_human, stale_fact, notes);
@@ -513,7 +513,7 @@ def main():
     since = parse_cli_time(args.since, args.tz) if args.since else None
     until = parse_cli_time(args.until, args.tz) if args.until else None
     if (args.since and not since) or (args.until and not until):
-        parser.error("--since/--until must be ISO timestamps, e.g. 2026-09-21 or 2026-09-28T22:00 (read as --tz) or 2026-09-29T05:00:00Z")
+        parser.error("--since/--until must be ISO timestamps, e.g. 2026-01-01 or 2026-01-01T22:00 (read as --tz) or 2026-01-02T05:00:00Z")
     rows = result["rows"]
     if not args.no_redact:
         for row in rows:

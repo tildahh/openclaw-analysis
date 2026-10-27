@@ -6,18 +6,18 @@ Completed silence is judged as correct_silence, missed, or unsure; missing evide
 Freeze the calibrated judge before comparing assistant behavior before and after a change.
 
     # 1. iterate on the prompt without Phoenix (prints judge JSON next to the human label)
-    python3 -m evals.judge_heartbeats try --cases runs/RUN/cases.jsonl --labels runs/RUN/cases.csv --limit 4
+    python3 -m scripts.judge_heartbeats try --cases runs/RUN/cases.jsonl --labels runs/RUN/cases.csv --limit 4
 
     # 2. upload the labeled cases (tune/holdout/silent splits come from the extractor)
-    python3 -m evals.judge_heartbeats build-dataset --cases runs/RUN/cases.jsonl \
+    python3 -m scripts.judge_heartbeats build-dataset --cases runs/RUN/cases.jsonl \
         --labels runs/RUN/cases.csv --name openclaw-heartbeats-v1 --period pre
 
     # 3. run the judge as an experiment on one split
-    python3 -m evals.judge_heartbeats run --name openclaw-heartbeats-v1 --split holdout \
+    python3 -m scripts.judge_heartbeats run --name openclaw-heartbeats-v1 --split holdout \
         --experiment judge-v1-holdout --reps 1
 
     # 4. after editing labels or notes in the Phoenix UI, pull them back into the CSV
-    python3 -m evals.judge_heartbeats pull-labels --name openclaw-heartbeats-v1 --merge-into runs/RUN/cases.csv
+    python3 -m scripts.judge_heartbeats pull-labels --name openclaw-heartbeats-v1 --merge-into runs/RUN/cases.csv
 
 Credentials come from ./.env (see .env.example: PHOENIX_COLLECTOR_ENDPOINT, PHOENIX_API_KEY and the
 judge endpoint key) unless already set in the environment. Dependencies are in requirements.txt.

@@ -1,7 +1,9 @@
 # Offline trace conversion and heartbeat extraction need only the standard library (Python 3.9+).
-# These dependencies support network export and the heartbeat judge in evals/.
+# These dependencies support network export and the heartbeat judge in scripts/.
 arize-phoenix-client>=3.5
 arize-phoenix-otel>=0.17
 openai>=1.0
 opentelemetry-proto>=1.30
 protobuf>=5
+# The figure scripts in figures/ draw the charts with matplotlib.
+matplotlib>=3.8

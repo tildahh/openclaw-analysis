@@ -1,10 +1,9 @@
 import { createHash } from "node:crypto";
 import { appendFileSync, chmodSync, closeSync, constants, fchmodSync, mkdirSync, openSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
-import { captureLiveRecord, configureLiveCapture } from "./live-trace.js";
+import { captureLiveRecord, configureLiveCapture, sessionPrefixes } from "./live-trace.js";
 
-const PREFIX = "agent:minilda:phoenix-eval-";
-const DEFAULT_DIR = "/Users/minilda/.openclaw/phoenix-evals";
 const OMIT = /^(systemPrompt|system_prompt|thinking|reasoning|redacted_thinking|reasoning_content|thoughtSignature|signature|image|images|image_url|audio|video|base64|bytes)$/i;
 const SECRET = /(?:authorization|apikey|accesstoken|refreshtoken|password|passwd|secret|secretaccesskey|privatekey|token|credentials?|cookies?)$/i;
 const FIELDS = {
@@ -17,15 +16,18 @@ const FIELDS = {
   agent_end: ["success", "error", "durationMs"],
 };
 
-/** Resolve tagged evaluations or explicitly enabled ordinary Minilda sessions. */
+/** Resolve tagged evaluations or explicitly enabled ordinary sessions of the configured agent; nothing is in scope without `options.agentId`. */
 export function resolveScope(event = {}, context = {}, options = {}) {
+  const { agentId } = options;
+  if (!agentId) return null;
   const sessionKey = context.sessionKey ?? event.sessionKey;
-  const prefix = options.sessionScope === "all" ? "agent:minilda:" : PREFIX;
+  const prefixes = sessionPrefixes(agentId);
+  const prefix = options.sessionScope === "all" ? prefixes.agent : prefixes.evaluation;
   if (typeof sessionKey !== "string" || !sessionKey.startsWith(prefix) || sessionKey.length === prefix.length) return null;
-  if (context.agentId !== undefined && context.agentId !== "minilda") return null;
+  if (context.agentId !== undefined && context.agentId !== agentId) return null;
   const runId = context.runId ?? event.runId;
   if (typeof runId !== "string" || !runId) return null;
-  return { agentId: "minilda", sessionKey, sessionId: context.sessionId ?? event.sessionId, runId, trace: context.trace };
+  return { agentId, sessionKey, sessionId: context.sessionId ?? event.sessionId, runId, trace: context.trace };
 }
 
 /** Redact common credential literals and bound a visible text field. */
@@ -112,7 +114,7 @@ export function createObserver(hook, directory, logger, writer = writeRecord, op
       if (record) {
         captureLiveRecord(record);
         // Preserve the eval directory's existing meaning for batch collectors.
-        const destination = options.sessionScope === "all" && !record.context.sessionKey.startsWith(PREFIX) ? join(directory, "live") : directory;
+        const destination = options.sessionScope === "all" && !record.context.sessionKey.startsWith(sessionPrefixes(options.agentId).evaluation) ? join(directory, "live") : directory;
         writer(destination, record);
       }
     } catch {
@@ -124,8 +126,14 @@ export function createObserver(hook, directory, logger, writer = writeRecord, op
 
 /** Register local observation hooks without installing tools or modifying prompts. */
 function registerObserver(api) {
-  const directory = api.pluginConfig?.outputDir || DEFAULT_DIR;
-  const options = { captureReasoning: api.pluginConfig?.captureReasoning ?? "none", sessionScope: api.pluginConfig?.sessionScope ?? "eval", liveExport: api.pluginConfig?.liveExport === true };
+  const agentId = api.pluginConfig?.agentId;
+  if (typeof agentId !== "string" || !agentId) {
+    // Fail closed: without an agent ID there is no session-key prefix to match.
+    api.logger?.warn?.("phoenix-eval-observer: config.agentId is not set, so no session is recorded");
+    return;
+  }
+  const directory = api.pluginConfig?.outputDir || join(homedir(), ".openclaw", "phoenix-evals");
+  const options = { agentId, captureReasoning: api.pluginConfig?.captureReasoning ?? "none", sessionScope: api.pluginConfig?.sessionScope ?? "eval", liveExport: api.pluginConfig?.liveExport === true };
   configureLiveCapture(options, redactText);
   for (const hook of Object.keys(FIELDS)) api.on(hook, createObserver(hook, directory, api.logger, undefined, options));
 }

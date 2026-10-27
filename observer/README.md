@@ -1,13 +1,13 @@
 # OpenClaw conversation and evaluation observer
 
-This passive plugin records OpenClaw assistant sessions. The internal agent ID
-remains `minilda`. By default it records session keys starting with
-`agent:minilda:phoenix-eval-` with a nonempty suffix. With `sessionScope: "all"`,
-it also records ordinary conversations, heartbeats and scheduled tasks belonging
-to that agent. It rejects any present
-`agentId` other than `minilda`; the installed model-call hooks omit that field,
-so their exact session-key prefix establishes agent identity. A run ID is also
-required. Other agents are ignored before their content is processed.
+This passive plugin records the OpenClaw sessions of one agent, named by the
+required `agentId` option. By default it records session keys starting with
+`agent:<agent-id>:phoenix-eval-` with a nonempty suffix. With `sessionScope: "all"`,
+it also records that agent's ordinary conversations, heartbeats and scheduled
+tasks. It rejects an event whose own `agentId` field names another agent; the
+installed model-call hooks omit that field, so the exact session-key prefix
+establishes agent identity. A run ID is also required. Other agents are ignored
+before their content is processed, and nothing is recorded until `agentId` is set.
 
 This observer writes local JSONL files. The optional `liveExport` bridge also
 enriches the installed native exporter through a small, version-checked patch.
@@ -39,7 +39,8 @@ Merge this entry into existing configuration without replacing other plugins:
           "allowPromptInjection": false
         },
         "config": {
-          "outputDir": "/Users/minilda/.openclaw/phoenix-evals",
+          "agentId": "<agent-id>",
+          "outputDir": "/Users/<you>/.openclaw/phoenix-evals",
           "captureReasoning": "text",
           "sessionScope": "all",
           "liveExport": true
@@ -50,10 +51,12 @@ Merge this entry into existing configuration without replacing other plugins:
 }
 ```
 
-The manifest requests startup activation. `index.js` is the entry point. The
-live bridge additionally requires `patch-native-exporter.py` to build the native
-exporter patch for its exact recorded SHA-256. It refuses a different version.
-See [live deployment and rollback](../docs/live-conversation-exporter.md).
+The manifest requests startup activation; `agentId` is its only required option
+and `outputDir` defaults to `~/.openclaw/phoenix-evals`. `index.js`
+is the entry point. The live bridge additionally requires `patch-native-exporter.py`
+to build the native exporter patch for its exact recorded SHA-256. It refuses a
+different version.
+Deployment steps, rollback and limits are in the main guide under [Install the observer plugin](../README.md#observer-plugin).
 The native exporter remains responsible for delivery to Phoenix and its content
 capture policy is respected. Hot reload on this installed OpenClaw version
 previously left a stale browser-plugin reference; perform a clean gateway restart

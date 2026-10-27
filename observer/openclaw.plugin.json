@@ -6,7 +6,9 @@
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
+    "required": ["agentId"],
     "properties": {
+      "agentId": { "type": "string", "minLength": 1 },
       "outputDir": { "type": "string", "minLength": 1 },
       "captureReasoning": { "type": "string", "enum": ["none", "size", "text"], "default": "none" },
       "sessionScope": { "type": "string", "enum": ["eval", "all"], "default": "eval" },

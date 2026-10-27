@@ -1,20 +1,52 @@
-# Improving an OpenClaw assistant using observability, telemetry and LLM-judges
+# Evaluating and improving an always-on AI assistant
 
-I run [OpenClaw](https://github.com/openclaw/openclaw), an open-source personal assistant, on my own hardware, with a locally hosted LLM served from a DGX Spark. Every 30 minutes, a scheduled check, called a heartbeat, wakes it to decide whether anything needs my attention.
+*A practical guide to evaluating an agent that acts on a schedule, with the numbers from my own assistant.*
 
-My assistant kept repeating old information or burying useful updates in long messages. Other users have reported similar problems: in one [GitHub issue](https://github.com/openclaw/openclaw/issues/142588), 26 of 27 scheduled checks sent messages about what the assistant planned to do, without providing a result.
+I run [OpenClaw](https://github.com/openclaw/openclaw), an open-source personal assistant, on my own hardware with a locally hosted model. Every 30 minutes a scheduled check, called a heartbeat, wakes it to decide whether anything needs my attention. It kept repeating old information or burying useful updates in long messages. Other users have hit the same delivery rule: in one [GitHub issue](https://github.com/openclaw/openclaw/issues/142588), 26 of 27 scheduled checks sent messages about what the assistant planned to do, without a result.
 
-I used [Phoenix](https://github.com/Arize-ai/phoenix), an open-source observability platform to improve the assistant, by testing changes to its context and instructions, and compare six models on personally relevant everyday tasks. I'll walk you through how I adopted Phoenix to work on this task, since it was not compatible with OpenClaw out-of-the-box, as well as the experiments, metrics, and LLM-judges I used to identify what would drive improvement. 
+This guide is the method I used to fix it. I used OpenClaw and [Phoenix](https://github.com/Arize-ai/phoenix), an open-source tracing and evaluation tool. The steps apply to any agent that calls tools on a schedule, and the tracing setup works with any backend that accepts [OpenTelemetry](https://opentelemetry.io/).
+
+## What I found
+
+| Finding | Evidence |
+|---|---|
+| Each heartbeat was re-reading the whole week's chat | 333 to 338 earlier messages per run. A chat reset stopped the copied reports, and a fresh session for each heartbeat cut the first prompt from 188k to 21k tokens. |
+| All five baseline reports reached me by mistake | The instruction said to end with `NO_REPLY`, and OpenClaw suppresses a message only when the whole reply is the token. |
+| The heartbeat judge matched 20 of my 24 labels | Cohen's κ 0.73, agreement corrected for chance. Its worst miss approved a silence after a due reminder because a chat reply had just mentioned it. |
+| The completion judge passed 62 of 87 answers that contradicted their sources | Every flight answer was marked complete, and 17 of the 18 contradicted the search results. |
+| Switching models traded three completed attempts for half the time per task | DeepSeek completed 24 of 27 attempts at a median 3.8 minutes per task and GLM 5.3 Flash 21 of 27 at 2.1 minutes, so I switched to GLM. The correctness review agreed: GLM had 6 answers confirmed correct against DeepSeek's 4, with 12 contradicted each. |
+
+[![Scatter plot of six models by median task time and mean task-completion score. Qwen-3.6 35B: 1.76 minutes, 0.59; Qwen-3.5 122B: 2.73 minutes, 0.70; Nemotron 120B: 3.64 minutes, 0.67; Muse 30B: 6.28 minutes, 0.63; GLM 5.3 Flash 320B: 2.08 minutes, 0.78; DeepSeek V4 Flash 284B: 3.81 minutes, 0.89.](figures/model-completion-time.png)](figures/model-completion-time.png)
+
+*Six local models on my nine everyday tasks, three attempts each. Each point is a model's median time per task against the share of its attempts an LLM judge marked complete. GLM and DeepSeek ran across two machines at a higher reasoning effort than the other four, so read their times with that in mind. The ring marks GLM 5.3 Flash, which replaced Qwen-3.5 122B as my assistant's model after this comparison.*
+
+## The loop
+
+```mermaid
+flowchart LR
+    A["Trace every run"] --> B["Run cheap checks"]
+    B --> C["Label a sample yourself"]
+    C --> D["Calibrate an LLM judge"]
+    D --> E["Change one thing"]
+    E --> F["Rerun the same tests"]
+    F --> B
+    classDef default fill:#FBFBF9,stroke:#2A78D6,stroke-width:1.5px,color:#1F2328
+    linkStyle default stroke:#6B7280,stroke-width:1.5px
+```
+
+Tracing comes first because every later step reads from it. Your own labels come before the judge because they are the only way to know whether its scores can be trusted.
 
 ## How the assistant works
 
-![A hand-drawn diagram: messages and scheduled heartbeats start OpenClaw runs. OpenClaw builds context and runs tools, sending context and tool results to the model and receiving tool calls or answers. Phoenix records model calls, tool calls and outputs.](figures/model-and-harness-v2.png)
+![A hand-drawn diagram. A message or a scheduled heartbeat starts a run in the harness, drawn as the largest box. The harness builds the context, shown as three strips in which conversation history is far longer than instructions or memory, runs tools, and then either delivers the reply or sends nothing when the whole reply is NO_REPLY. Four numbered arrows carry the context to the model, a tool call back, the tool result out again, and the answer back. A dashed frame around the harness and the model is the tracing backend, which records each model call and tool call as a span.](figures/model-and-harness-v2.png)
 
-OpenClaw (the harness) gives the model its instructions, files, and conversation history. Below is a simplified version of the loop:
+*Blue is the harness, the part you change. The outlined box is the model, the part you test. Everything inside the dashed frame is recorded. The long history bar is what I found before enabling fresh sessions.*
+
+OpenClaw (the harness) gives the model its instructions, files, and conversation history. When the model asks for a tool, OpenClaw runs it and passes the result back. A simplified version of the loop:
 
 ```python
 def run_assistant(trigger):
-    """Run the assistant"""
+    """One run: build the context, loop with the model, then deliver or stay silent."""
     context = build_prompt(trigger)
     while True:
         reply = model(context, tools)
@@ -22,66 +54,45 @@ def run_assistant(trigger):
             context += [reply, run_tool(reply)]
         else:
             break
-    if reply.strip() == "NO_REPLY":
+    if reply.text.strip() == "NO_REPLY":
         return
-    send_to_chat(reply)
+    send_to_chat(reply.text)
 ```
 
-## Observability
+The last three lines are the delivery rule: the assistant stays quiet only when its entire reply is the `NO_REPLY` token.
 
-A trace shows the trajectory of steps an agent in one turn, including reasoning, tool calls and tool results. Enabling tracing is critical for assessing the performance of our agents.
+## See what it is doing
 
-### Set up Tracing
+A trace records one run: the context that was assembled, each model call with its token counts, each tool call with its arguments and result, and the final reply. Each step is a span. Without traces, the chat log is all you can read, and it shows the reply and nothing behind it.
 
-Below we'll walk you through the two installation options:
+OpenClaw exports traces through its OpenTelemetry plugin. The setup below sends them to Phoenix, hosted or on your own machine. Any backend that accepts OpenTelemetry traces takes the same configuration with a different endpoint.
 
-- **Cloud:** Your traces are stored in a Phoenix cloud environment hosted by Arize.
-- **Local:** Phoenix will run and store traces locally (this setup requires Docker).
-  
-*These examples enable captureContent, which can store prompts, responses, and tool inputs and outputs in Phoenix. For Phoenix Cloud, that content is sent to Arize’s hosted service.*
+<details>
+<summary><b>Set up tracing</b> (OpenClaw to Phoenix Cloud, or to a local Phoenix in Docker)</summary>
 
-Before you get started back up your current configuration:
+<br>
+
+These examples enable `captureContent`, which stores prompts, responses, and tool inputs and outputs in the tracing backend. With Phoenix Cloud, that content is sent to Arize's hosted service. With the local option it stays on your machine.
+
+Back up your current configuration first:
 
 ```bash
 cp ~/.openclaw/openclaw.json ~/.openclaw/openclaw.json.bak.$(date +%Y%m%d-%H%M%S)
 ```
 
-Next install and enable the OpenTelemetry plugin:
+Install and enable the OpenTelemetry plugin:
 
 ```bash
 openclaw plugins install @openclaw/diagnostics-otel
-# enable it
 openclaw plugins enable diagnostics-otel
-# check which plugins are installed
 openclaw plugins list
 ```
 
-<details open>
-<summary><strong>Phoenix Cloud installation steps</strong></summary>
+**Option A: Phoenix Cloud**
 
-### 1. Create your API key
-
-Open your Phoenix Cloud space at [app.phoenix.arize.com](https://app.phoenix.arize.com), then go to **Settings** to create an API key and find your collector endpoint.
-
-Add your `PHOENIX_API_KEY` key to `~/.openclaw/.env`
-
-```bash
-nano ~/.openclaw/.env
-```
-
-Keep this file out of version control. If it’s inside a Git repository, add it to .gitignore.
-
-### 2. Configure tracing
-
-Open your OpenClaw configuration:
-
-```bash
-nano ~/.openclaw/openclaw.json
-```
-
-Merge the following `diagnostics` section into the existing top-level JSON object. **Do not replace your entire configuration.**
-
-Replace `<space>` with your Phoenix space identifier.
+1. Open your Phoenix Cloud space at [app.phoenix.arize.com](https://app.phoenix.arize.com) and go to **Settings** to create an API key and find your collector endpoint.
+2. Add `PHOENIX_API_KEY=<your key>` to `~/.openclaw/.env`. Keep this file out of version control.
+3. Merge the following `diagnostics` section into the top-level object of `~/.openclaw/openclaw.json`. Do not replace your whole configuration. Replace `<space>` with your Phoenix space identifier and keep `${PHOENIX_API_KEY}` exactly as written. OpenClaw reads the value from its environment.
 
 ```json
 {
@@ -91,9 +102,7 @@ Replace `<space>` with your Phoenix space identifier.
       "enabled": true,
       "protocol": "http/protobuf",
       "tracesEndpoint": "https://app.phoenix.arize.com/s/<space>/v1/traces",
-      "headers": {
-        "Authorization": "Bearer ${PHOENIX_API_KEY}"
-      },
+      "headers": { "Authorization": "Bearer ${PHOENIX_API_KEY}" },
       "traces": true,
       "metrics": false,
       "logs": false,
@@ -104,16 +113,9 @@ Replace `<space>` with your Phoenix space identifier.
 }
 ```
 
-Keep `${PHOENIX_API_KEY}` exactly as shown. OpenClaw reads the value from its environment.
+**Option B: Phoenix on your own machine**
 
-</details>
-
-<details>
-<summary><strong>Local installation steps</strong></summary>
-
-### 1. Start Phoenix
-
-Ensure Docker is running. Create a persistent data volume and start Phoenix:
+1. With Docker running, create a persistent volume and start Phoenix. This exposes it only on your own machine, at [http://127.0.0.1:6006](http://127.0.0.1:6006).
 
 ```bash
 docker volume create phoenix-local-data
@@ -126,17 +128,7 @@ docker run -d \
   arizephoenix/phoenix:latest
 ```
 
-This exposes Phoenix only on your own machine. Open [http://127.0.0.1:6006](http://127.0.0.1:6006) to view the interface.
-
-### 2. Configure tracing
-
-Open your OpenClaw configuration:
-
-```bash
-nano ~/.openclaw/openclaw.json
-```
-
-Merge the following `diagnostics` section into the existing top-level JSON object.
+2. Merge the following `diagnostics` section into `~/.openclaw/openclaw.json`. The localhost endpoint assumes the OpenClaw gateway and Phoenix run on the same host. A gateway inside a container needs an endpoint it can reach.
 
 ```json
 {
@@ -156,79 +148,176 @@ Merge the following `diagnostics` section into the existing top-level JSON objec
 }
 ```
 
-The localhost endpoint assumes the OpenClaw gateway and Phoenix are on the same host. A gateway running inside a separate container needs a container-reachable endpoint instead.
-
-</details>
-
-After completion, validate and restart the gateway:
+**Either option:** validate and restart the gateway.
 
 ```bash
 openclaw config validate
 openclaw gateway restart
 ```
 
-### Making Phoenix work with OpenClaw 
+</details>
 
-Out of the box Phoenix won't surface conversations as coherent end-to-end units. It's based on the [OpenInference](https://github.com/Arize-ai/openinference) framework so I made an [observer plugin](observer/) so conversations and heartbeats would show up as independent sessions. I also made several quality of life improvements, so all tools wouldn't have the same generic tool name. 
+### Make the traces readable
 
-*I made this [setup guide](docs/live-conversation-exporter.md) on how get started with the plugin.*
+A trace is a tree of spans. The root span stands for the whole run, and the model calls and tool calls nest under it. A trace viewer lists runs by their root span, so its name, request and reply are what you read when you review a day. Out of the box, every root span had a generic name, `openclaw.harness.run` for a heartbeat and `openclaw.message.processed` for a chat message. Its request and reply were empty, nothing linked the turns of one conversation, and every tool span was named `openclaw.tool.execution`. You cannot review a day of heartbeats that way.
 
-| Trace detail | Native Phoenix export | My export |
+I wrote an [observer plugin](observer/) that names each root span for what started the run (Heartbeat, Conversation, Scheduled task or Evaluation), fills in the request and the final reply, and gives the turns of one conversation the same session ID so they group together. It writes standard [OpenInference](https://github.com/Arize-ai/openinference) attributes such as `session.id` and `input.value`, which is what Phoenix reads to group and display runs. Other backends show them as plain attributes. Saved runs can also be re-exported offline as the readable trace below.
+
+[![A request with the readable export: the root is an agent span named by the task, the Input panel shows the user's question, the Output panel shows the final answer, and the child spans are numbered model and tool steps that carry the tool's name, plus recorded reasoning.](figures/trace-readable-export.png)](figures/trace-readable-export.png)
+
+*Readable export: the root carries the request and the final answer, and each step is named for what it did.*
+
+| Trace detail | Default export | With the plugin |
 |---|---|---|
-| Run type | A generic label | Heartbeat, Conversation, Scheduled task, or Evaluation |
-| `input.value` and `output.value` | Missing | The request and final reply |
-| `session.id` | Missing | A conversation identifier |
-| Tool names | Repeated `openclaw.tool.execution` labels | Names such as `tool: memory_search` |
-| Token counts | Aggregate usage only | Recorded without counting the same usage twice |
-| Recorded reasoning | Not exported | Optional |
+| Root span name | `openclaw.harness.run` or `openclaw.message.processed` | Heartbeat, Conversation, Scheduled task or Evaluation |
+| `input.value` and `output.value` | Missing | The request and the final reply |
+| `session.id` | Missing | One identifier per conversation, so its turns group together |
+| Tool names | Every tool span is `openclaw.tool.execution` | In the readable export, each step is named for the tool that ran, such as `read` or `memory_search` |
+| Token counts | Aggregate usage counted as an extra model call | Per-call usage, with the aggregate kept as a diagnostic counter |
+| Recorded reasoning | Not exported | Optional, bounded and credential-redacted |
 
+[![Sessions list with the plugin: rows labeled Heartbeat, Scheduled task or Conversation with their median run time, tokens across calls and trace count; one conversation holds 558 traces. A stats panel shows 320 sessions, about three traces per session, and median and 99th-percentile durations.](figures/phoenix-sessions-list.png)](figures/phoenix-sessions-list.png)
 
-## Start with simple checks
+*The sessions view with the plugin in place: each run arrives as a Heartbeat, Scheduled task or Conversation, and a conversation's turns group into one session, here 558 traces.*
 
-Start with checks you can automate: reply format, repeated text, token counts, and tool calls. This [extraction script](scripts/extract_heartbeats.py) collects heartbeat replies and usage data and removes recognized contact and credential patterns (replace `user@host` with the SSH destination for the machine running OpenClaw.).
+<a id="observer-plugin"></a>
+<details>
+<summary><b>Install the observer plugin</b> (verified against OpenClaw 2026.9.5)</summary>
+
+<br>
+
+The plugin keeps the name it was written under, `phoenix-eval-observer`, from when it only recorded evaluation sessions. It has two parts. The **observer hooks** record each run's visible prompt, final reply, tool calls and timings to local JSONL files, with credentials redacted and system prompts, reasoning and media left out. The optional **live-export bridge** patches the installed OpenTelemetry exporter so the traces it already sends carry a readable root span, the request and reply, a session identifier and the original tool names. Nothing in the plugin changes a prompt, a tool call, the model, memory or the result, and a capture failure never blocks the run.
+
+```mermaid
+flowchart TB
+    R["One run: message, heartbeat or scheduled task"]
+    R --> N["Built-in OpenTelemetry exporter<br/>model and tool spans"]
+    R --> O["Observer plugin hooks<br/>request, final reply, session identity"]
+    N --> B["Live-export bridge<br/>names the root span, sets session.id, fills in input and output"]
+    O --> B
+    B --> P[("Tracing backend<br/>Phoenix or another OpenTelemetry backend")]
+    classDef default fill:#FBFBF9,stroke:#2A78D6,stroke-width:1.5px,color:#1F2328
+    linkStyle default stroke:#6B7280,stroke-width:1.5px
+```
+
+**Configuration.** Merge this entry into `plugins.entries` in `openclaw.json` without replacing other plugins. The plugin records only the sessions of the agent named by `agentId`, so set it to your own agent's ID. It records nothing until you do.
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "phoenix-eval-observer": {
+        "enabled": true,
+        "hooks": { "allowConversationAccess": true, "allowPromptInjection": false },
+        "config": {
+          "agentId": "<agent-id>",
+          "outputDir": "/Users/<you>/.openclaw/phoenix-evals",
+          "captureReasoning": "none",
+          "sessionScope": "all",
+          "liveExport": true
+        }
+      }
+    }
+  }
+}
+```
+
+| Option | Values | Effect |
+|---|---|---|
+| `agentId` | Your agent's ID | Required. Only sessions whose key starts with `agent:<agent-id>:` are recorded, and an event that names another agent is ignored before its content is read. |
+| `outputDir` | A directory path | Where the JSONL records go. It defaults to `~/.openclaw/phoenix-evals`. Directories are created with mode `0700` and files with `0600`. |
+| `captureReasoning` | `none`, `size`, `text` | Leave reasoning out, record only its length, or record the text, bounded and credential-redacted. Reasoning is where personal detail is densest. Use `text` only when you intend to upload it. |
+| `sessionScope` | `eval`, `all` | Record only sessions tagged for evaluation, or every conversation, heartbeat and scheduled task of the configured agent. |
+| `liveExport` | `true`, `false` | Enrich the exporter's traces as described above. Requires the patched exporter. |
+
+In Phoenix, set the destination project with `diagnostics.otel.headers["x-project-name"]`. Keeping everyday conversations, isolated evaluations and reconstructed traces in separate projects keeps the populations comparable later.
+
+**Installation.** The patch was built against `@openclaw/diagnostics-otel` 2026.9.5. Rebuild it after a plugin update.
+
+1. Back up the installed observer directory, the exporter's runtime file and your configuration, with a timestamp.
+2. Run `npm test` in `observer/`. The tests use fixtures only, with no model calls or exports.
+3. Build the patched exporter with `observer/patch-native-exporter.py`, passing the exact upstream source file, an output path and the installed observer directory.
+4. At an idle moment, copy the observer files and the patched exporter into place and merge the configuration entry above.
+5. Restart the gateway and check plugin and gateway health. Hot reload left a stale plugin reference on my version, so restart cleanly.
+6. Send two ordinary messages and confirm they share one session ID but have separate trace IDs, then open a trace and check the request, reply, tool and reasoning panels.
+
+**Rollback.** At an idle moment, restore the backed-up exporter file and observer directory, restore the plugin's configuration entry, restart and check health. Avoid restoring the whole configuration file over unrelated changes made since.
+
+**What is recorded, and the limits.**
+
+- `llm_input` and `llm_output` describe the visible prompt and reply of one attempt: provider, model, history messages, assistant text and aggregate usage. The system prompt is stored as a hash and a character count. Reasoning blocks and image, audio and video payloads are omitted.
+- Tool hooks record the tool name, call ID, sanitized parameters, the visible result, any error and the duration. Model-call hooks record timing and outcome without model content.
+- Strings are cut at 16,000 characters with an explicit truncation marker. Arrays and objects keep 100 items to a depth of 8. These limits can truncate evidence.
+- Credential redaction is pattern-based. It does not anonymize personal information inside tool results.
+- The hooks observe on a best-effort basis: a run that dies before its terminal event stays incomplete. An exported reply is not proof that a message was delivered, and recorded reasoning is the text the model emitted, which does not show its computation.
+- The reference for every field is [observer/README.md](observer/README.md).
+
+</details>
+
+## Start with cheap checks
+
+Start with checks you can automate: reply format, repeated text, token counts, and tool calls. They cost nothing per run and they found my worst bug. Each span of a heartbeat's trace answers one of them:
+
+```mermaid
+flowchart TD
+    T(["Timer fires every 30 minutes"]) --> C["Context assembled<br/>How many earlier messages were included?"]
+    C --> M["Model call<br/>How many input tokens?"]
+    M --> Q{"Tool?"}
+    Q -- yes --> TL["Tool call<br/>Did it read the calendar and reminders?"]
+    TL --> M
+    Q -- no --> R{"Only NO_REPLY?"}
+    R -- yes --> S["Nothing is sent"]
+    R -- no --> D["Message delivered<br/>Does it repeat the previous report?"]
+    classDef default fill:#FBFBF9,stroke:#2A78D6,stroke-width:1.5px,color:#1F2328
+    linkStyle default stroke:#6B7280,stroke-width:1.5px
+```
+
+This [extraction script](scripts/extract_heartbeats.py) collects heartbeat replies and usage data from OpenClaw's transcript store and removes recognized contact and credential patterns (replace `user@host` with the SSH destination of the machine running OpenClaw):
 
 ```bash
 python3 -m scripts.extract_heartbeats --host user@host --since YYYY-MM-DD
 ```
 
-| Question | What to inspect or measure |
-|---|---|
-| Did it reply with only `NO_REPLY`? | Check the reply’s text after trimming whitespace. |
-| Did it repeat the previous report? | Compare lines in consecutive replies. |
-| How much context did it receive? | Read the input-token count for each model call. |
-| Did it check the calendar and reminders? | Look for those tool calls in the trace. |
+- [ ] Did it reply with only `NO_REPLY`? Trim whitespace and compare the whole reply to the token.
+- [ ] Did it repeat the previous report? Compare lines across consecutive replies.
+- [ ] How much context did it receive? Read the input-token count on each model call.
+- [ ] Did it check the calendar and reminders? Look for those tool calls in the trace.
 
-These checks showed that my assistant was copying earlier reports and adding `NO_REPLY` at the end.
+These checks showed that my assistant was copying earlier reports and adding `NO_REPLY` at the end of each one.
 
 ## Reduce repeated and unnecessary messages
 
-If your assistant keeps repeating itself, check its conversation history, instructions, and record of previous notifications.
+If your assistant keeps repeating itself, check three things in order: what is in its context, what its instructions say about staying quiet, and whether it looked at current sources before deciding.
 
-When a scheduled run copies an earlier message, look at what's included in its context. In Phoenix, filter for the `openclaw.context.assembled` span to see how much history was included.
+### Check what the run can see
 
-Each heartbeat received 338 earlier messages, nearly half a million characters of conversation history.
+When a scheduled run copies an earlier message, look at what was included in its context. In Phoenix, filter for the `openclaw.context.assembled` span to see how much history was included.
+
+Each of my heartbeats received 338 earlier messages, nearly half a million characters of conversation history.
 
 ![Cropped Phoenix context attributes showing 338 messages, outlined in red, and 492061 characters of conversation history.](figures/heartbeat-context-counts-highlighted.png)
 
-If each run receives the full conversation, try giving it a fresh session. In OpenClaw’s heartbeat configuration, set:
+*The assembled-context span of one heartbeat: 338 messages and 492,061 characters of history went into the prompt.*
+
+If each run receives the full conversation, give it a fresh session. In OpenClaw's heartbeat configuration, set:
 
 ```json
 "heartbeat": { "isolatedSession": true }
 ```
 
-Fresh sessions cut the context from 188k to 21k tokens and stopped the verbatim copying, but didn’t stop all unnecessary messages.
+A manual chat reset had already stopped the copied reports. Fresh sessions kept the context at 21k tokens, down from 188k, and kept copying low, but they did not stop all unnecessary messages.
 
-### Match instructions to the delivery rule
+### Match the instructions to the delivery rule
 
-If the assistant says ‘nothing changed’ but still sends a message, check the rule for staying silent. OpenClaw sends nothing only when the entire reply is NO_REPLY. Make that explicit in the instructions:
+If the assistant says "nothing changed" but still sends a message, check the rule for staying silent. OpenClaw sends nothing only when the entire reply is `NO_REPLY`. Make that explicit:
 
 ```diff
 - For no meaningful change, end with exactly `NO_REPLY`.
 + For no meaningful change, reply with exactly `NO_REPLY` and nothing else.
-+ NO_REPLY means no message reaches the user;  anything else you write is delivered.
++ NO_REPLY means no message reaches the user; anything else you write is delivered.
 ```
 
-My old instruction allowed a full status report before `NO_REPLY`, which caused it to still be delivered:
+My old instruction allowed a full status report before `NO_REPLY`, so I received the report every time:
 
 <table>
   <tr>
@@ -236,8 +325,8 @@ My old instruction allowed a full status report before `NO_REPLY`, which caused 
     <th width="50%">First heartbeat under the new instructions</th>
   </tr>
   <tr>
-    <td><img src="figures/heartbeat-before-no-reply-excerpt.png" width="100%" alt="Generic conclusion from a Phoenix model-call output before the instruction changes, followed by Heartbeat Result: NO_REPLY."></td>
-    <td><img src="figures/heartbeat-after-no-reply-output.png" width="100%" alt="Cropped Phoenix model-call output after the instruction changes: the whole reply is NO_REPLY."></td>
+    <td><img src="figures/heartbeat-before-no-reply-excerpt.png" width="100%" alt="Generic conclusion from a model-call output before the instruction changes, followed by Heartbeat Result: NO_REPLY."></td>
+    <td><img src="figures/heartbeat-after-no-reply-output.png" width="100%" alt="Cropped model-call output after the instruction changes: the whole reply is NO_REPLY."></td>
   </tr>
   <tr>
     <td>Text before <code>NO_REPLY</code> meant the report was delivered.</td>
@@ -245,76 +334,63 @@ My old instruction allowed a full status report before `NO_REPLY`, which caused 
   </tr>
 </table>
 
-After the change the assistant stayed quiet more often, but also missed reminders. If the assistant misses a reminder, check whether it actually read the calendar and reminders.
+### Require current sources
 
-After I required calendar and reminder checks, both runs repeated a reminder the assistant had already sent. Next, I’d test a log of sent notifications.
+After the rewrite, which went in together with a broader prompt rewrite, the assistant stayed quiet more often. Two consecutive runs also stayed quiet through the same due reminder, and the first of them made no tool calls at all. The run after them found the reminder and sent it. I then required a calendar and reminders check before any silence. Both runs under that rule read the sources and sent the reminder again, although it had already gone out. A log of sent notifications is the next change to test.
 
-### Compare the heartbeat configurations
+The changes overlapped, and each one exposed the next problem: the reset and fresh sessions ended the copying, the silence rule ended the reports sent with `NO_REPLY` attached, the source checks ended the misses, and repeated reminders remained. The counts for every phase are in the [appendix](#heartbeat-observation-records).
 
-Review unwanted messages and missed reminders after each change. Track context size and tool use alongside those labels so you can see whether a cheaper run still makes the wrong decision.
+> [!TIP]
+> Track context size and tool use alongside your labels. A run that uses less context but makes the same wrong decision has not improved. In Phoenix I annotated the final model-call span of each heartbeat with its phase and filtered the Spans tab:
+>
+> ```
+> name == "openclaw.model.call" and annotations["heartbeat_phase"].label == "after_change"
+> ```
 
-To compare phases in Phoenix, label final model-call spans and filter the Spans tab:
+## Decide what a good message is
 
-```
-name == "openclaw.model.call" and annotations["heartbeat_phase"].label == "before_change"
-name == "openclaw.model.call" and annotations["heartbeat_phase"].label == "after_change"
-```
+### Label a sample yourself
 
-I added a `heartbeat_condition` annotation to distinguish configurations within the `after_change` group. The table below summarizes the measurements and manually assigned labels for each configuration. 
+Decide what the assistant should have done before you ask a model to grade it. For an assistant that chooses between speaking and staying quiet, the question has two parts: was there something I needed to hear, and did it speak? That gives four outcomes, and two of them are failures.
 
-| Measure | Baseline | Chat reset | Fresh sessions | New instructions | Live checks |
-|---|---|---|---|---|---|
-| Heartbeats | 5 | 3 | 11 | 6 | 2 |
-| First prompt median tokens | 188k | 53k | 21k | 21k | 27k |
-| Redundant messages | 5 | 1 | 6 | 0 | 2 |
-| Missed reminders | 0 | 0 | 0 | 2 | 0 |
+|  | Something needed my attention | Nothing did |
+|---|---|---|
+| **It sent a message** | `useful`, or `somewhat_useful` when buried in a long message | `redundant` |
+| **It stayed silent** | `missed` | `correct_silence` |
 
-## Evaluate messages and silences
-
-### Define when a message is warranted
-
-Check both unnecessary messages and missed reminders. If a run crashes or times out, count it separately from a deliberate choice to stay quiet.
-
-I labeled a sample of 27 heartbeats as useful, `somewhat_useful` (`useful` but buried in a long message), `redundant`, `correct_silence`, `missed` (stayed quiet when something needed attention), or `unsure`.
+Add `unsure` for runs where the evidence cannot support a decision, and count a crash or timeout separately from a deliberate silence. I labeled 27 heartbeats this way. The counts for each configuration are in the [appendix](#heartbeat-observation-records).
 
 ### Check the judge against your labels
 
-Once you’ve labeled the messages, check whether an LLM judge rates them the same way.
+Once you have labels, check whether an LLM judge produces the same ones. Report agreement next to what a trivial judge would score, because one that always picks the most common label also scores well on raw agreement.
 
-I used GPT-6 Sol to evaluate the Qwen assistant’s messages. It agreed with my labels on 20 of 24 heartbeats: 83%, Cohen’s κ 0.73, against 54% for always guessing the most common label.
+I used GPT-6 Sol, with [this prompt](prompts/heartbeat-judge.md), to judge my assistant's heartbeats. It had scored 24 of the 27 I labeled, and it agreed with my labels on 20 of those 24: 83% agreement, Cohen's κ 0.73, against 54% for always choosing `redundant`. The four disagreements:
 
-The four disagreements were:
+- It dismissed one message that I thought contained useful new information.
+- It was unsure about two silences I considered correct. Neither run had checked the calendar or reminders, so the judge had no evidence to decide with.
+- It approved one silence that missed a reminder.
 
-- Dismissed one message that I thought contained useful new information.
-- Unsure about two silences I considered correct. Neither run had checked the calendar or reminders, so the judge lacked the evidence to decide.
-- Approved one silence that missed a reminder.
+The third disagreement is the one to worry about. The judge reasoned that a chat reply minutes earlier had already mentioned the overdue reminder. I count only a heartbeat message as a reminder. A judge that marks a missed reminder as a correct silence hides the failure you are looking for, so read the disagreements one by one as well as the agreement rate.
 
-The missed reminder matters most because the judge marked silence as correct when the assistant should have sent a message.
-
-Save the judge’s labels on the traces in Phoenix, where you can filter for a label, such as `redundant`, and inspect the messages behind it. More on this in the Appendix.
+Save the judge's labels on the traces. In Phoenix they become annotations you can filter on, such as every heartbeat labeled `redundant`, and read the messages behind them. The [judge script](scripts/judge_heartbeats.py) uploads labeled cases as a dataset, runs the judge as an experiment and scores it against the labels. The selection procedure is in the [appendix](#heartbeat-judge-methodology).
 
 ### Repeat the checks in everyday use
 
-Check another sample after making changes. Does the assistant still look up current information? Does it send fewer unnecessary messages? Is it missing anything important?
+After the changes, check another sample. Does the assistant still look up current information? Does it send fewer unnecessary messages? Is it missing anything?
 
-I reviewed another 23 heartbeats the next day. All used tools, and none appended NO_REPLY to a longer message. The judge rated 14 messages somewhat useful, six redundant, and all three silences correct.
+I labeled another 23 heartbeats the following day. All of them checked the calendar and reminders, and none appended `NO_REPLY` to a longer message.
 
-| Check | Baseline (5) | After (23) |
-|---|---|---|
-| Median input tokens on the first call | 187k | 27k (−86%) |
-| Messages ending in `NO_REPLY` | 100% | 0% |
-| Used tools | Not measured | 100% |
-| Stayed silent | 0 | 13% |
-| Redundant | 100% | 30% |
-| Somewhat useful | 0% | 70% |
+![Four before-and-after comparisons. Context at the start of each run: 188k tokens before, 27k after. Reports delivered with NO_REPLY attached: 5 of 5 before, 0 of 23 after. Heartbeats worth hearing: 0 of 5 before, 9 of 23 after. Correct silences: 0 of 5 before, 3 of 23 after.](figures/heartbeat-before-after.png)
 
-## Build a repeatable test set
+*Before: the first five heartbeats, over about two hours, each carrying the whole week's chat as context. After: the next day's 23 heartbeats with fresh sessions, the rewritten silence rule, source checks and 12 added tools, whose definitions account for the rise from 21k to 27k. Worth hearing and correct silences are my labels. Context is the median input of the first model call, and the assistant ran Qwen-3.5 122B throughout.*
 
-Test changes on the same set of requests so you can see what improves and what gets worse. Choose tasks that use different tools, and write down what a good answer needs to include before running them.
+By my labels, 9 of the 20 messages were useful or somewhat useful and 11 were redundant, and the three silences were correct. The judge was more generous with the same messages, rating 14 somewhat useful and 6 redundant, and agreed on the silences. Eleven of 23 heartbeats still produced a message I did not need, which is why a log of sent notifications is the next change to test.
 
-I used nine everyday tasks covering flights, coursework, event preparation, and model-training calculations, saved as a Phoenix dataset.
+## Build a fixed test set
 
-For each run:
+The heartbeat work showed what the assistant did wrong from day to day. To compare prompts, tools and models fairly, I needed a fixed set of requests. Test every change on that set so you can see what improves and what gets worse. Choose tasks that use different tools, and write down what a good answer needs to include before running them.
+
+I used nine everyday tasks covering flights, coursework, event preparation, and model-training calculations, saved as a dataset in Phoenix. For each run:
 
 1. Start a fresh session with the same files. Remove previous answers and drafts so the assistant starts from scratch.
 2. Save the request, settings, answer, and tool results. Record any errors or timeouts.
@@ -327,79 +403,80 @@ Track four things:
 - Were its facts and calculations correct?
 - Did the run produce an answer, or fail before finishing?
 
-Completeness and correctness are different. A missing booking link makes an answer incomplete. A flight duration that contradicts the search result makes it incorrect.
+An answer can be complete and still wrong. A missing booking link makes an answer incomplete. A flight duration that contradicts the search result makes it wrong.
 
-I used an AI coding assistant to review the answers and cite evidence for each decision.
+I used an AI coding assistant to review the answers against the requirements and cite evidence for each decision.
 
-## Compare prompts, tools, and models
+## Compare prompts, tools and models
 
 ### Test changes to the instructions
 
-Make a change that addresses a problem you found, then rerun the full test set.
+Make a change that addresses a problem you found, then rerun the full test set, including the tasks that already worked.
 
 My assistant often misread information it had already found. I added this instruction:
 
-> “Before giving a final answer, check that it fulfills the user's request and that its decision-critical claims agree with the evidence you retrieved.”
+> "Before giving a final answer, check that it fulfills the user's request and that its decision-critical claims agree with the evidence you retrieved."
 
-I tested the original and revised instructions once on each task. With the revised instructions, the assistant corrected an event deadline but stopped returning the weekly reading list. Overall, it met 31 of 52 requirements and used about 6% more tokens.
+I ran the original and revised instructions once on each task. With the revised instructions, the assistant corrected an event deadline but stopped returning the weekly reading list. Overall, it met 31 of 52 requirements and used about 6% more tokens.
 
-Check tasks that already worked as well as the problem you wanted to fix. My weekly-reading task asked for the readings, their links, and what was due. The reading-list portion regressed:
+The weekly-reading task shows the regression:
 
-| | Original instructions | With the final-answer check |
-| --- | --- | --- |
-| Reading-list result | Six individual reading links, grouped into two to read and four to skim. | No individual reading links; directed me to sign in to the course website myself. |
+- With the original instructions: six individual reading links, grouped into two to read and four to skim.
+- With the final-answer check: no individual reading links, and it directed me to sign in to the course website myself.
 
-The original run opened the course guide and reading list. The revised run only read shortened lists of available documents and never opened the documents themselves. Next, I’d tell it to follow those links and read the full documents, then repeat the tests.
+The original run opened the course guide and the reading list. The revised run only read the index pages and never opened the documents themselves. The next change to test is an instruction to follow those links and read the full documents.
 
-### Test whether new tools improve the assistant
+### Test whether new tools help
 
-When the assistant lacks information, add a tool that can retrieve it. Then check whether it uses it correctly.
+When the assistant lacks information, add a tool that can retrieve it, then check whether it uses the tool correctly.
 
-I added 12 tools through MCP, including flight search and a Canvas integration. Using the original prompt, I ran each task three times.
+I added 12 tools through [MCP](https://modelcontextprotocol.io/) (Model Context Protocol), including flight search and a Canvas integration (my university's course site), and ran each task three times with the original prompt. All three flight attempts now found specific itineraries for the requested dates, where the earlier runs had returned general fares for other months. The answers still mixed up details from different offers, including layover cities. Across the tasks, 57% of requirements were met.
 
-All three flight attempts now found specific itineraries for the requested dates, rather than general fares for other months. But the answers still mixed up details from different offers, including layover cities. Across the tasks, 57% of requirements were met.
-
-Use Phoenix’s comparison view to inspect answers to the same request alongside their runtime and tool use.
+Use a comparison view to inspect answers to the same request side by side with their runtime and tool use.
 
 ### Compare models on the same tasks
 
-To compare models, run each on the same tasks more than once. I tested six models on nine tasks, with three attempts per task. The plot compares median response time with Phoenix’s task-completion score.
+To compare models, run each on the same tasks more than once. I tested six models on nine tasks, three attempts per task, including my assistant's model at the time, Qwen-3.5 122B. The [scatter plot at the top of this guide](#what-i-found) compares median time per task with the share of attempts an LLM judge marked complete.
 
-![Scatter plot of six models by median task time and mean Phoenix task-completion score. Qwen-3.6 35B: 1.76 minutes, 0.59; Qwen-3.5 122B: 2.73 minutes, 0.70; Nemotron 120B: 3.64 minutes, 0.67; Muse 30B: 6.28 minutes, 0.63; GLM 5.3 Flash 320B: 2.08 minutes, 0.78; DeepSeek V4 Flash 284B: 3.81 minutes, 0.89.](figures/model-completion-time.png)
-
-DeepSeek had the highest completion score, 0.89, and took about 3.8 minutes per task. I switched my assistant to GLM 5.3 Flash after this comparison: it came close to DeepSeek’s completion score at about half the median time per task.
-
-Qwen-3.6 was the fastest at 1.76 minutes but had the lowest completion score (0.59). Muse 30B was the slowest at 6.28 minutes despite having the fewest total parameters.
+DeepSeek had the highest completion share, 24 of 27 attempts, at about 3.8 minutes per task. I switched my assistant to GLM 5.3 Flash after this comparison: 21 of 27 attempts at about half the median time per task. GLM and DeepSeek ran across two machines and at a higher reasoning effort than the other four, which the appendix describes. Qwen-3.6 was the fastest at 1.76 minutes and had the lowest completion score, 0.59. Muse 30B was the slowest at 6.28 minutes despite having the fewest total parameters.
 
 <a id="runtime-distribution"></a>
 
-Inspect individual runtimes to see whether a fast median hides occasional long waits. Each row shows all 27 matched attempts for one model.
+Inspect individual runtimes to see whether a fast median hides occasional long waits. Each row shows all 27 attempts for one model.
 
 [![Runtime distribution showing all 27 attempts for each of six models, with median markers and one DeepSeek timeout marked with a cross at 20.11 minutes. Medians: Qwen-3.6 1.76 minutes, Qwen-3.5 2.73, Nemotron 3.64, Muse 6.28, GLM 2.08 and DeepSeek 3.81.](figures/runtime-distribution.png)](figures/runtime-distribution.png)
 
-*Each dot is an attempt; the cross marks a recorded timeout. Black ticks mark medians. Hardware and serving settings differed. [Methodology](#runtime-distribution-methodology).*
+*Each dot is an attempt and the cross marks a recorded timeout. Black ticks mark medians, and rows are ordered by them. Hardware and serving settings differed. [Methodology](#runtime-distribution-methodology).*
 
-DeepSeek's median was 3.81 minutes, but one attempt timed out after 20.11 minutes. Muse's longest attempt took 13.01 minutes, compared with its 6.28-minute median.
+DeepSeek's median was 3.81 minutes, and one attempt timed out after 20.11 minutes. Muse's longest attempt took 13.01 minutes against its 6.28-minute median.
 
-The task breakdown shows where those scores differ. Each cell counts how many of three attempts the judge marked complete.
+The task breakdown shows where the scores come from. Each cell counts how many of three attempts the judge marked complete.
 
 [![Task-by-model completion grid with nine task rows and six model columns. Each cell shows 0/3 through 3/3 attempts marked complete. Study planning has only two completions across all models. GLM and DeepSeek have 3/3 for weekly course readings; the other models have 0/3 or 1/3.](figures/task-completion-grid.png)](figures/task-completion-grid.png)
 
-*Darker cells mean more attempts marked complete.*
+*Darker cells mean more attempts marked complete. Tasks are ordered hardest first and models best first, with totals on the margins.*
 
-Study planning received low completion scores across all six setups. GLM and DeepSeek were the only models marked complete on all three weekly-reading attempts.
+The study plan received low completion counts across all six models. GLM and DeepSeek were the only models marked complete on all three weekly course readings attempts, and every model completed the flight shortlist in all three attempts.
 
-A completion score doesn’t tell you whether every detail is correct. For one flight option, the tool returned a 30-hour journey, but Muse described it as 22 hours. Comparing the model’s input and output in Phoenix exposed the mistake.
+A completion score does not tell you whether every detail is correct. For one flight option, the tool returned a 30-hour journey and Muse described it as 22 hours. Comparing the model's input and output in the trace exposed the mistake.
 
-![Selected evidence from Muse Glimmer 30B's flight trace: the model-visible tool input says durationSeconds 109620, or 30 hours 27 minutes. The final answer says 22 hours 27 minutes for the same return journey, eight hours too short.](figures/flight-source-versus-answer.png)
+![Selected evidence from Muse 30B's flight trace: the model-visible tool input shows durationSeconds 109620, or 30 hours 27 minutes. The final answer says 22 hours 27 minutes for the same return journey, eight hours too short.](figures/flight-source-versus-answer.png)
 
-## Use LLM-as-a-judge
+*One flight option from an earlier Muse 30B run with a 10-minute limit, outside the 27 attempts charted above: the duration field the tool returned against the duration in the final answer.*
 
-### Choose your metrics
+So I had every answer reviewed for correctness as well. The review checked each material claim against the sources the assistant had saved, and kept uncertain cases separate. Of 162 answers it confirmed 27, could not fully verify 45, found a contradicted claim in 87, and recorded 3 with no answer.
 
-Choose the metrics that matter for your assistant, then compare their scores with answers you’ve reviewed.
+![Stacked bars of each model's 27 attempts by the correctness review's verdict: confirmed correct, could not fully verify, contradicted by sources, and no answer. Muse 30B: 7, 9, 9, 2. GLM 5.3 Flash 320B: 6, 9, 12, 0. DeepSeek V4 Flash 284B: 4, 10, 12, 1. Nemotron 120B: 5, 8, 14, 0. Qwen-3.5 122B: 4, 4, 19, 0. Qwen-3.6 35B: 1, 5, 21, 0.](figures/correctness-by-model.png)
 
-I used five built-in Phoenix evaluators with GPT-6 Sol, keeping their default instructions:
+*The review checked every material claim in each answer against the sources the assistant saved. Rows are ordered by answers without a contradicted claim.*
+
+Muse had the most answers confirmed correct, 7 of 27, within its pass-to-pass spread of 2, 4 and 1. DeepSeek, with the highest completion share, still had 12 answers with a contradicted claim. None of the 18 flight answers was confirmed correct: all 18 were marked complete, 17 contradicted the search results and one could not be verified. The review also supported the model switch: GLM had 6 answers confirmed correct against DeepSeek's 4, with 12 contradicted each, and GLM's slowest attempt took 6.5 minutes against DeepSeek's 18 and one timeout.
+
+## Use LLM judges
+
+### Choose metrics and check their inputs
+
+Choose the metrics that matter for your assistant, then compare their scores with answers you have reviewed yourself. I used five built-in Phoenix evaluators with GPT-6 Sol, keeping their default instructions:
 
 - **Task completion**: Did it do what the user asked?
 - **Faithfulness**: Are its claims supported by the information it retrieved?
@@ -407,49 +484,59 @@ I used five built-in Phoenix evaluators with GPT-6 Sol, keeping their default in
 - **Retrieval relevance**: Did the tools return useful information?
 - **Tool response handling**: Did it use that information correctly?
 
-Check what the judge receives before relying on its scores. In my setup, tool results were cut off at 8,192 characters, some answers were shortened, and the user profile was missing. I updated the inputs to include full answers, the profile, and tool results from the model-call spans.
+Check what the judge receives before relying on its scores. In my first setup, tool results were cut off at 8,192 characters, some answers were shortened, and the user profile was missing. I rebuilt the inputs to include full answers, the profile, and the tool results from the model-call spans.
 
-Check both the errors each judge catches and the correct answers it rejects. The appendix compares these verdicts with the reference review.
+An experiments table shows the scores side by side, one row per model, each averaged over three attempts at nine tasks.
 
-### Use scores to find answers worth reviewing
+[![Experiments table comparing six models across task completion, faithfulness, tool selection, tool response handling and retrieval relevance. Scores in that order: DeepSeek V4 Flash 284B: 0.88, 0.22, 0.40, 0.14, 0.85; GLM 5.3 Flash 320B: 0.77, 0.18, 0.44, 0.11, 0.88; Muse 30B: 0.62, 0.14, 0.40, 0.03, 0.85; Nemotron 120B: 0.66, 0.03, 0.33, 0.00, 0.88; Qwen-3.5 122B: 0.70, 0.14, 0.70, 0.11, 0.88; Qwen-3.6 35B: 0.59, 0.03, 0.44, 0.00, 0.88.](figures/phoenix-models-judge-scores.png)](figures/phoenix-models-dashboard.png)
 
-Phoenix’s Experiments view shows the scores side by side so you can compare models.
+*Click the table for the full dashboard. It truncates scores, so 24 of 27 shows as 0.88 and 21 of 27 as 0.77, and it counts answers a judge could not score as 0, which is why retrieval relevance shows 0.85 to 0.88 although it passed every answer it scored.*
 
-[![Phoenix Experiments table comparing six models across task completion, faithfulness, tool selection, tool response handling and retrieval relevance. Scores in that order: DeepSeek V4 Flash 284B: 0.88, 0.22, 0.40, 0.14, 0.85; GLM 5.3 Flash 320B: 0.77, 0.18, 0.44, 0.11, 0.88; Muse 30B: 0.62, 0.14, 0.40, 0.03, 0.85; Nemotron 120B: 0.66, 0.03, 0.33, 0.00, 0.88; Qwen-3.5 122B: 0.70, 0.14, 0.70, 0.11, 0.88; Qwen-3.6 35B: 0.59, 0.03, 0.44, 0.00, 0.88.](figures/phoenix-models-judge-scores.png)](figures/phoenix-models-dashboard.png)
+Open a scored run to read the answer next to the judge's explanation, then filter the traces for that label to find similar answers. Use those examples to decide what to change, and rerun the same tasks to see whether it helped.
 
-Open a scored run to read the answer and the judge's explanation. In one run, tool response handling failed an answer that gave the wrong weekday for a deadline.
+### Know what each judge catches
 
-Filter the traces to find other answers with the same label:
+Each judge measures something different, and its name does not say which errors it catches. I compared all five with the correctness review across the 114 answers the review could settle. Three of the judges need tool results and could score 99 of those.
 
-```
-annotations["tool_response_handling"].label == "incorrect"
-```
+![Paired bars comparing five judges with the correctness review. Task completion flagged 25 of 87 wrong answers and passed 21 of 27 correct ones. Retrieval relevance flagged 0 of 82 wrong answers and passed 17 of 17 correct ones. Tool selection flagged 44 of 87 and passed 15 of 27. Faithfulness flagged 79 of 82 and passed 11 of 17. Tool response handling flagged 80 of 82 and passed 6 of 17.](figures/task-judges-vs-review.png)
 
-Use these examples to decide what to change, then rerun the same tasks to check whether it helped.
+*Judges ordered from most lenient to strictest by the share of contradicted answers they flagged. Denominators differ because three judges need tool results and could score fewer answers.*
 
-<a id="troubleshoot-your-assistant"></a>
+Task completion passed 62 of 87 answers that contradicted their sources: an answer can cover the request and still get important details wrong. Faithfulness, the only one of the five designed to check claims against sources, caught most of the contradicted answers and also rejected some correct ones. Retrieval relevance passed every answer it could score and did not separate the models. The judges score general qualities and the review checks each claim against the saved sources, so report the one that matches the failure you care about.
+
+> [!IMPORTANT]
+> Before you trust a judge's number, know three things about it: what it receives, how often it agrees with you on cases you have reviewed, and in which direction it is wrong when it disagrees.
 
 ## Troubleshoot your assistant
 
 Start with a failed run and use its trace to choose a change to test. Rerun the same tasks, checking whether the change fixes the problem or introduces another one.
 
-| Symptom | What to inspect in Phoenix | Change to test |
+| Symptom | Inspect in the trace | Change to test |
 |---|---|---|
-| Repeats earlier reports | Conversation history in `openclaw.context.assembled` and the first model call's input | Try a fresh session for each heartbeat with `isolatedSession: true`. Compare context size and repeated text. |
-| Sends a report ending in `NO_REPLY` | The exact final output, including any text before the token | Require the whole reply to be `NO_REPLY` when nothing warrants a message. Check missed reminders as well as unwanted messages. |
-| Stays silent when a reminder is due | Calendar and reminder tool calls, their results, and the final decision | Require current calendar and reminder lookups before deciding to stay silent. |
-| Repeats a reminder already sent | Earlier notifications and whether the current model input includes them | Test a sent-message log that the assistant checks before sending. This was not tested here. |
-| Gives details that contradict its sources | The final answer alongside the exact fields returned by its tools | Add a final check against retrieved evidence, then rerun the full test set to catch regressions. |
-| Takes too long or times out | Run duration, time spent in model and tool calls, and repeated calls | If model calls dominate, compare another model on the same tasks. Track individual waits as well as the median. |
-| Judge score conflicts with the evidence | The judge's explanation, rubric, and saved inputs for that answer | Supply missing answer text, source results, or relevant user context, then rerun the judge on reviewed examples. |
+| **Repeats earlier reports** | Assembled context and the first model call's input | A fresh session per heartbeat (`isolatedSession: true`). Compare context size and repeated text. |
+| **Sends a report ending in `NO_REPLY`** | The exact final output, including text before the token | Require the whole reply to be `NO_REPLY` when nothing warrants a message. Count missed reminders too. |
+| **Stays silent when a reminder is due** | Calendar and reminder tool calls, their results, the final decision | Require current calendar and reminder lookups before choosing silence. |
+| **Repeats a reminder already sent** | Earlier notifications and whether the model input includes them | A sent-message log the assistant checks before sending (not tested here). |
+| **Gives details that contradict its sources** | The final answer next to the exact fields its tools returned | A final check against retrieved evidence, then a full rerun to catch regressions. |
+| **Takes too long or times out** | Run duration, time in model and tool calls, repeated calls | If model calls dominate, compare another model on the same tasks. Track individual waits as well as the median. |
+| **Judge score conflicts with the evidence** | The judge's explanation, rubric and saved inputs | Supply the missing answer text, sources or user context, then rerun the judge on reviewed examples. |
 
-# Appendix
+## What I would do next
 
-## Heartbeat observation records
+- Does a log of sent notifications, read before each decision, stop the repeated reminders? Add one and rerun the heartbeat checks.
+- Does telling the assistant to open the documents it finds bring back the reading list without losing the deadline fix? The final-answer check regressed the list because the run only read index pages.
+- Do the judges with repaired inputs still disagree with the correctness review on the next pass through the nine tasks, and in the same direction?
+- How much do live sources move between runs? Record the timestamps of flight searches and course pages so that reruns can be compared.
 
-Here are the saved measurements and labels, grouped by the conditions observed:
+## Appendix
 
-| Measure | Baseline | Chat reset | Fresh sessions | New instructions | Live checks |
+<a id="heartbeat-observation-records"></a>
+<details>
+<summary><b>Heartbeat observation records</b> (27 heartbeats across five configurations)</summary>
+
+<br>
+
+| Measure | Whole week's chat | /new chat | Fresh sessions | Silence rule + prompt rewrite | Live-source checks |
 |---|---|---|---|---|---|
 | Heartbeats | 5 | 3 | 11 | 6 | 2 |
 | First-call prompt, median tokens | 188k | 53k | 21k | 21k | 27k |
@@ -459,102 +546,95 @@ Here are the saved measurements and labels, grouped by the conditions observed:
 | Reports with `NO_REPLY` appended | 5 | 0 | 2 | 0 | 0 |
 | Bare `NO_REPLY` replies | 0 | 2 | 1 | 5 | 0 |
 | Redundant messages | 5 | 1 | 6 | 0 | 2 |
+| Somewhat useful messages | 0 | 0 | 4 | 1 | 0 |
+| Correct silences | 0 | 2 | 1 | 3 | 0 |
 | Missed reminders | 0 | 0 | 0 | 2 | 0 |
 
-The manual `/new` reset was separate from enabling fresh sessions and had already stopped verbatim copying. The silence-rule edit and heartbeat-prompt rewrite were made together; the live-source instruction was paired with removing a stale schedule note. Quiet hours, tool limits and available tools also changed during observation. Reporting changes, gateway restarts and shared model-server load further limit comparisons between phases. These were live observations, not independent tests of each change.
+The manual `/new` reset was separate from enabling fresh sessions and had already stopped verbatim copying. The silence-rule edit and the heartbeat-prompt rewrite were made together. The live-source instruction was paired with removing a stale schedule note. Quiet hours (times the assistant is told to stay silent), tool limits and available tools also changed during observation. Reporting changes, gateway restarts and shared model-server load further limit comparisons between phases. The changes were observed live and overlapped, so none was tested on its own.
 
-## Heartbeat judge methodology
+</details>
 
-> Methodology: Two candidate judges each scored 24 calibration cases three times in Phoenix experiments. Sol matched the draft reference on 67/72 runs and repeated the same label for 23/24 cases. Astra matched 59/72 and returned `unsure` 10 times. Those unreviewed draft labels were used to select the judge, not to establish agreement with me.
+<a id="heartbeat-judge-methodology"></a>
+<details>
+<summary><b>Heartbeat judge selection</b></summary>
 
-## Task experiment records
+<br>
+
+To choose between GPT-6 Sol and GPT-6 Astra, each scored a separate set of 24 calibration cases three times: transcript excerpts and synthetic fixtures with proposed labels that had not been reviewed. Sol matched those labels on 67 of 72 runs and repeated the same label for 23 of 24 cases. Astra matched 59 of 72 and returned `unsure` 10 times. The proposed labels only selected the judge. The 83% agreement above comes from the 24 live heartbeats I labeled afterwards.
+
+</details>
+
+<details>
+<summary><b>Task experiment records</b></summary>
+
+<br>
+
+A pass is one run through all nine tasks, and an attempt is one task in one pass.
 
 | Comparison | Repetitions | Recorded result |
 |---|---|---|
-| Baseline prompt versus final-answer check | One pass per condition across nine tasks | Revised prompt: 31 PASS, 18 FAIL and 3 `UNSURE` requirement verdicts out of 52; about 6% more tokens |
-| Baseline prompt with 12 added tools | Three passes across nine tasks | 89/156 requirements marked PASS (57%); task-level summary versions are listed under unresolved records |
-| Six-model correctness comparison | Three passes per model across nine tasks | 162 planned attempts; 159 substantive answers and 3 no-answer outcomes in the saved reference counts |
+| Baseline prompt versus final-answer check | One pass per condition across nine tasks | Revised prompt: 31 PASS, 18 FAIL and 3 `UNSURE` requirement verdicts out of 52, with about 6% more tokens |
+| Baseline prompt with 12 added tools | Three passes across nine tasks | 89 of 156 requirements marked PASS (57%) |
+| Six-model comparison | Three passes per model across nine tasks | 162 planned attempts, of which 159 were substantive answers and 3 no-answer outcomes |
 
-The later model dashboard includes a replacement run for a Qwen setup failure, so its population differs from the original tool comparison.
+The model dashboard includes a replacement run for a Qwen setup failure, so its population differs from the original tool comparison.
 
-Live flight, calendar and web results could change between trials. Workspaces and sessions were reset, but external sources were not frozen. Requests went through a separate evaluation gateway rather than an exact replay of the production chat channel. These limits apply even when the dataset and model were unchanged.
+Live flight, calendar and web results could change between trials. Workspaces and sessions were reset, but external sources were not frozen. Requests went through a separate test instance of the assistant, so they were not exact replays of the production chat. These limits apply even when the dataset and model were unchanged.
 
-## Runtime distribution methodology
+<a id="runtime-distribution-methodology"></a>
 
-The [runtime distribution](#runtime-distribution) uses all 27 matched attempts per model, the same population as the scatter plot and completion grid. The timeout remains in the median. Vertical spacing separates nearby points. Times exclude setup; hardware and serving settings differed.
+**Runtime distribution.** The [runtime figure](#runtime-distribution) uses the same 27 attempts per model as the scatter plot and the completion grid, with one replacement run standing in for a failed setup. The timeout remains in the median. Vertical spacing separates nearby points. Times exclude setup; hardware and serving settings differed.
 
-<a id="correctness-review-by-model"></a>
+</details>
 
-## Correctness review by model
+<details>
+<summary><b>Model observations and serving conditions</b></summary>
 
-The correctness review covers the same six models and 27 attempts per model. It retains uncertain judgments separately:
+<br>
 
-![Stacked bars of each model's 27 attempts by the correctness review's verdict. Muse 30B: 7 confirmed correct, 9 unverifiable, 9 with a contradicted claim, 2 with no answer. GLM 5.3 Flash 320B: 6, 9, 12, 0. DeepSeek V4 Flash 284B: 4, 10, 12, 1. Nemotron 120B: 5, 8, 14, 0. Qwen-3.5 122B: 4, 4, 19, 0. Qwen-3.6 35B: 1, 5, 21, 0.](figures/correctness-by-model.png)
+The results describe each model together with its serving setup. Most runs used a 20-minute task limit. All Qwen-3.5 passes and Qwen-3.6's first pass used 10 minutes and did not reach that limit. GLM 5.3 Flash 320B and DeepSeek V4 Flash 284B ran across two DGX Spark machines, and the other models ran on one. Every pass requested OpenClaw's medium reasoning setting, which GLM's and DeepSeek's servers mapped to high effort.
 
-In the Phoenix dashboard, `answer_correct` records whether the review found no contradicted claim, including PASS and `UNSURE`. The figure above retains those labels individually. DeepSeek's task-completion score of 0.88 accompanied 12 answers the reference found wrong.
+- **Variation across passes.** Muse had 2, 4 and 1 confirmed-correct answers across its passes, and GLM had 1, 3 and 2.
+- **Time spent generating text.** GLM generated about 98 characters per second, DeepSeek 147 and Muse 34. Muse model calls took about 35 seconds against GLM's 10, and tasks took 6.3 against 2.1 minutes. Most task time was in model calls, with tools taking seconds.
+- **Model architecture.** Muse is dense, using all 30B parameters for each token. Qwen-3.6 has 35B total parameters and uses 3B per token. Hardware and serving differences prevent attributing the timing gap to architecture alone.
+- **Invalid tool calls.** Muse produced garbled calls in 7 of 27 tasks. Of 19 rejected calls, it repaired 12 on the next turn. Another 12 calls ran with an argument dropped, including a 60-day calendar request reduced to today. Twice, tool-call markup was delivered as the answer. Qwen-3.6 had one rejected call and repaired it; the other models had none.
+- **Concurrent tool calls.** DeepSeek and Qwen-3.6 sent several calls together in 70–80% of their tool turns. Nemotron called tools sequentially.
+- **Weekday calculations.** Five models sometimes used weekdays from the previous year's calendar. Qwen-3.6 got 32 of 33 weekdays wrong across its study plans, GLM got 10 of 41 wrong, and DeepSeek got all 25 right.
+- **Links absent from retrieved evidence.** Two of Nemotron's 29 links were absent from its sources. In its earlier 10-minute passes, 4 of 34 were absent, including a malformed paper link. Other models used retrieved links or built them from retrieved identifiers.
+- **Form interactions.** Qwen-3.6 filled 12 hackathon-registration fields and requested missing details before offering submission. No other model filled a form.
+- **Explicit uncertainty.** DeepSeek stated what it could not verify in 6 of 27 answers. No other model did so more than three times.
 
-Across all 162 attempts, the review found:
 
-- 27 correct answers
-- 45 answers it couldn’t fully verify
-- 87 answers containing a claim that contradicted their sources
-- 3 attempts with no answer
+</details>
 
-Muse had the most answers marked correct: 7 out of 27. None of the flight answers was confirmed correct: 17 contradicted the search results, and one couldn’t be verified.
+<details>
+<summary><b>Judge inputs and score aggregation</b></summary>
 
-<a id="judge-agreement-with-reference-review"></a>
+<br>
 
-## Judge agreement with the reference review
+The repaired judge inputs use the trial's user profile, the captured request and the model-visible tool results. They are still partial records. The full system prompt was not captured. The input builder keeps limits of 20,000 characters for request context, 150,000 per tool result and 400,000 for combined context. A statement absent from that packet is not automatically false.
 
-![Paired bars comparing five Phoenix judges with the correctness review. Task completion flagged 25 of 87 wrong answers and passed 21 of 27 correct ones. Retrieval relevance flagged 0 of 82 wrong answers and passed 17 of 17 correct ones. Tool selection flagged 44 of 87 and passed 15 of 27. Faithfulness flagged 79 of 82 and passed 11 of 17. Tool response handling flagged 80 of 82 and passed 6 of 17.](figures/task-judges-vs-review.png)
+For the dashboard, each task's three repetitions are averaged, then the nine tasks. The publisher supplies zero scores for missing answers and non-applicable judges so those rows keep the planned-attempt denominator. The judge-versus-review figure instead excludes those entries and uses only answers the correctness review marked PASS or FAIL. In the dashboard, `answer_correct` records whether the review found no contradicted claim, so PASS and `UNSURE` both count as correct there. The correctness figure keeps them apart. Token estimates are kept separate from directly reported usage.
 
-Faithfulness caught most answers the review found wrong, but also rejected some correct ones. Task completion passed 62 of 87 answers with errors: an answer can cover the request and still get important details wrong.
-
-<a id="model-observations-and-serving-conditions"></a>
-
-## Model observations and serving conditions
-
-The results below describe the model together with its serving setup. Most runs used a 20-minute task limit. All Qwen3.5 passes and Qwen3.6's first pass used 10 minutes and did not reach that limit. GLM 5.3 Flash 320B and DeepSeek V4 Flash 284B ran across two DGX Sparks; the other models ran on one. Every pass requested OpenClaw's medium reasoning setting, which GLM's and DeepSeek's servers mapped to high effort.
-
-The behavior analysis and tool-call checks provide details beyond the correctness score:
-
-| Observation | Recorded example |
-|---|---|
-| Variation across passes | Muse had 2, 4 and 1 confirmed-correct answers across its passes; GLM had 1, 3 and 2. |
-| Time spent generating text | GLM generated about 98 characters per second, DeepSeek 147 and Muse 34. Muse model calls took about 35 seconds versus GLM's 10; tasks took 6.3 versus 2.1 minutes. Most task time was in model calls, with tools taking seconds. |
-| Model architecture | Muse is dense, using all 30B parameters for each token; Qwen3.6 has 35B total parameters and uses 3B per token. Hardware and serving differences prevent attributing the timing gap to architecture alone. |
-| Invalid tool calls | Muse produced garbled calls in 7/27 tasks. Of 19 rejected calls, it repaired 12 on the next turn. Another 12 calls ran with an argument dropped, including a 60-day calendar request reduced to today. Twice, tool-call markup was delivered as the answer. Qwen3.6 had one rejected call and repaired it; the other models had none. |
-| Concurrent tool calls | DeepSeek and Qwen3.6 sent several calls together in 70–80% of their tool turns. Nemotron called tools sequentially. |
-| Weekday calculations | Five models sometimes used weekdays from the previous year's calendar. Qwen3.6 got 32/33 weekdays wrong across its study plans; GLM got 10/41 wrong; DeepSeek got all 25 right. |
-| Links absent from retrieved evidence | Two of Nemotron's 29 links were absent from its sources. In its earlier 10-minute passes, 4/34 were absent, including a malformed paper link. Other models used retrieved links or built them from retrieved identifiers. |
-| Form interactions | Qwen3.6 filled 12 hackathon-registration fields and requested missing details before offering submission. No other model filled a form. |
-| Explicit uncertainty | DeepSeek stated what it could not verify in 6/27 answers. No other model did so more than three times. |
-
-These observations span the conditions named in the saved records. The earlier 10-minute examples, including the illustrated Muse flight error, should retain that provenance when compared with later runs.
-
-## Judge inputs and score aggregation
-
-The repaired judge inputs use the trial's user profile, captured request and model-visible tool results. They are still partial records, not captures of the full system prompt. The input builder retains limits of 20,000 characters for request context, 150,000 per tool result and 400,000 for combined context. A statement absent from that packet is not automatically false.
-
-For the dashboard, Phoenix averages each task's three repetitions, then the nine tasks. The publisher supplies zero scores for missing answers and non-applicable judges so those rows retain the planned-attempt denominator. The judge-versus-review figure instead excludes those entries and uses only reference PASS/FAIL cases. Token estimates remain separate from directly reported usage.
-
-## OpenClaw context and related work
-
-OpenClaw combines chat, persistent memory, tool use and scheduled runs. A [reported heartbeat issue](https://github.com/openclaw/openclaw/issues/142588) describes unwanted narration, and the [Proactive Agent benchmark](https://arxiv.org/abs/2410.12361) examines when assistants should speak or stay silent.
-
-<img src="figures/openclaw-stars.png" width="480" alt="GitHub stars over time: the Linux kernel's steady climb since 2012 to about 250,000, and OpenClaw's near-vertical rise to about 390,000 in 2026">
-
-This saved chart shows GitHub stars at capture. Packaging the observer as an integration remains a separate engineering follow-up; Arize's [coding-harness-tracing](https://github.com/Arize-ai/coding-harness-tracing) is related integration work.
+</details>
 
 ## Code
 
-- Tracing: [observer plugin](observer/), [setup guide](docs/live-conversation-exporter.md).
-- Heartbeats: [extraction script](scripts/extract_heartbeats.py), [judge prompt](prompts/heartbeat-judge.md), [judge script](evals/judge_heartbeats.py).
+| Path | What it does |
+|---|---|
+| [`observer/`](observer/) | The plugin: hook recorder, live-export bridge, exporter patch builder and fixture tests (`npm test`). |
+| [`scripts/extract_heartbeats.py`](scripts/extract_heartbeats.py) | Turns heartbeat runs from the transcript store into labelable cases, with contact and credential patterns removed. |
+| [`scripts/export_trace.py`](scripts/export_trace.py) | Converts reviewed hook records into OpenInference traces offline, and uploads them only with `--export`. |
+| [`scripts/judge_heartbeats.py`](scripts/judge_heartbeats.py) | Uploads labeled cases as a dataset, runs the judge as an experiment, scores agreement and pulls edited labels back. |
+| [`scripts/figures/`](scripts/figures/) | The scripts that draw each chart in this guide from the saved results, the shared color roles in `palette.py`, and the harness diagram's source. |
+| [`figures/`](figures/) | The charts and captures shown in this guide. |
+| [`prompts/`](prompts/) | The heartbeat instructions [before](prompts/heartbeat-before.md) and [after](prompts/heartbeat-after.md) the rewrite, and the [judge prompt](prompts/heartbeat-judge.md). |
 
 ## Further reading
 
+- [A Field Guide to Rapidly Improving AI Products](https://hamel.dev/blog/posts/field-guide/) (Hamel Husain): error analysis and expert review.
 - [How to build agent evals from traces](https://arize.com/resources/agent-evals-from-traces/) (Arize): error analysis, code checks, LLM judges and regression datasets.
 - [Aligning LLM Evals with Human Feedback](https://arize.com/docs/phoenix/cookbook/human-in-the-loop-workflows-annotations/aligning-llm-evals-with-human-annotations-typescript) (Phoenix cookbook): checking judge decisions against human labels.
-- [A Field Guide to Rapidly Improving AI Products](https://hamel.dev/blog/posts/field-guide/) (Hamel Husain): error analysis and expert review.
 - [Improving Deep Agents with harness engineering](https://www.langchain.com/blog/improving-deep-agents-with-harness-engineering) (LangChain): experiments with changes to the application around a model.
-- [Proactive Agent](https://arxiv.org/abs/2410.12361) (Lu et al.): evaluating when an assistant should speak.
+- [Who Validates the Validators?](https://arxiv.org/abs/2404.12272) (Shankar et al.): aligning LLM-assisted evaluation with human judgment.
+- [Proactive Agent](https://arxiv.org/abs/2410.12361) (Lu et al.): evaluating when an assistant should speak and when it should stay quiet.

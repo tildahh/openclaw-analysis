@@ -1,0 +1,148 @@
+<!doctype html>
+<!-- Editable source for model-and-harness-v2.png. Render it headlessly from the repo root (the tab title turns
+     into "ready: no overflow" once every label fits; any other title means a label overflowed):
+       "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --hide-scrollbars \
+         --window-size=1200,600 --force-device-scale-factor=2 --virtual-time-budget=10000 \
+         --screenshot=figures/model-and-harness-v2.png "file://$PWD/scripts/figures/model-and-harness-v2.html" -->
+<html><head><meta charset="utf-8">
+<title>The harness and the model</title>
+<style>
+  @font-face { font-family: "Virgil"; src: url("https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.17.6/dist/excalidraw-assets/Virgil.woff2") format("woff2"); }
+  html, body { margin: 0; background: #fbfbf9; }
+  svg { display: block; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/roughjs@4.6.6/bundled/rough.js"></script>
+</head><body>
+<svg id="diagram" xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600" role="img" aria-labelledby="diagram-title diagram-description">
+  <title id="diagram-title">The harness runs the assistant; a tracing backend records every step</title>
+  <desc id="diagram-description">A message or a scheduled heartbeat starts a run in the harness. The harness builds the context, in which conversation history is by far the largest part, runs tools, and then either delivers the reply or sends nothing when the whole reply is NO_REPLY. Numbered arrows carry the context to the model, tool calls back, tool results out again, and the answer back. A dashed frame around the harness and the model is the tracing backend, which records each model call and tool call as a span.</desc>
+</svg>
+<script>
+// Colour roles match scripts/figures/palette.py: blue for what you change (the harness), ink outline for what you swap
+// (the model), grey for what you observe (tracing) and for the triggers.
+const INK = "#1f2328", MUTED = "#6b7280", BLUE = "#2a78d6", LIGHT_BLUE = "#bfd4ee", HARNESS_FILL = "#edf4fc",
+      CARD_STROKE = "#c8d6e8", TRIGGER_FILL = "#f3f4f6", BODY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+const svg = document.getElementById("diagram"), sketch = rough.svg(svg);
+let seed = 1;
+
+/** Add a text label with an optional handwritten face and width check. */
+function addText(x, y, label, size = 18, color = INK, handwritten = false, anchor = "start", maxWidth = 0, weight = "normal") {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  for (const [key, value] of Object.entries({ x, y, fill: color, "font-size": size, "font-weight": weight,
+      "font-family": handwritten ? "Virgil, cursive" : BODY, "text-anchor": anchor })) node.setAttribute(key, value);
+  if (maxWidth) node.dataset.maxWidth = maxWidth;
+  node.textContent = label;
+  svg.appendChild(node);
+}
+
+/** Path of a rounded rectangle, so sketched shapes keep soft corners instead of ruler-straight ones. */
+function roundedRect(x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2);
+  return `M${x + r} ${y} h${width - 2 * r} a${r} ${r} 0 0 1 ${r} ${r} v${height - 2 * r} a${r} ${r} 0 0 1 -${r} ${r} ` +
+         `h-${width - 2 * r} a${r} ${r} 0 0 1 -${r} -${r} v-${height - 2 * r} a${r} ${r} 0 0 1 ${r} -${r} z`;
+}
+
+/** Draw a sketched strip for the context proportions; the lengths still read as proportion. */
+function addRect(x, y, width, height, fill) {
+  svg.appendChild(sketch.path(roundedRect(x, y, width, height, 4), { stroke: fill, strokeWidth: 1.2, roughness: 0.7,
+    seed: seed++, fill, fillStyle: "solid" }));
+}
+
+/** Draw a lightly sketched card with soft corners and a quiet solid fill. */
+function drawCard(x, y, width, height, color, fill, dashed = false, strokeWidth = 1.8) {
+  svg.appendChild(sketch.path(roundedRect(x, y, width, height, 14), { stroke: color, strokeWidth, roughness: 0.7, seed: seed++,
+    fill: fill === "none" ? undefined : fill, fillStyle: "solid", strokeLineDash: dashed ? [7, 7] : undefined }));
+}
+
+/** Draw a sketch line, optionally dashed. */
+function drawLine(x1, y1, x2, y2, color, dashed = false) {
+  svg.appendChild(sketch.line(x1, y1, x2, y2, { stroke: color, strokeWidth: 2,
+    roughness: 0.5, seed: seed++, strokeLineDash: dashed ? [5, 6] : undefined }));
+}
+
+/** Draw a directional connection with a compact arrowhead. */
+function drawArrow(x1, y1, x2, y2, color, dashed = false) {
+  drawLine(x1, y1, x2, y2, color, dashed);
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  for (const offset of [-0.45, 0.45]) drawLine(x2, y2,
+    x2 - 11 * Math.cos(angle + offset), y2 - 11 * Math.sin(angle + offset), color);
+}
+
+/** Draw the triggers, the harness with its three jobs, the numbered loop with the model, and the tracing frame. */
+function drawDiagram() {
+  // Tracing frame: the recorder sees everything inside it, and nothing about the person outside it.
+  drawCard(360, 76, 772, 484, MUTED, "none", true, 1.5);
+  addText(384, 540, "Tracing backend", 26, MUTED, true);
+  addText(600, 538, "records each model call and tool call as a span", 17, MUTED);
+
+  // Triggers, outside the frame.
+  drawCard(32, 118, 218, 108, MUTED, TRIGGER_FILL);
+  drawCard(54, 138, 30, 23, MUTED, "#ffffff");
+  drawLine(61, 162, 58, 171, MUTED);
+  drawLine(58, 171, 70, 163, MUTED);
+  addText(54, 204, "Your message", 26, INK, true, "start", 178);
+  drawArrow(260, 160, 369, 160, MUTED);
+  drawArrow(369, 206, 260, 206, BLUE);
+  addText(314, 229, "delivered", 15, BLUE, false, "middle");
+
+  drawCard(32, 300, 218, 108, MUTED, TRIGGER_FILL);
+  svg.appendChild(sketch.circle(68, 328, 28, { stroke: MUTED, strokeWidth: 1.8, roughness: 0.5, seed: seed++ }));
+  drawLine(68, 328, 68, 319, MUTED);
+  drawLine(68, 328, 76, 332, MUTED);
+  addText(54, 374, "Heartbeat", 28, INK, true);
+  addText(54, 398, "Every 30 minutes", 17, MUTED);
+  drawArrow(260, 354, 369, 354, MUTED);
+  addText(314, 341, "starts a run", 15, MUTED, false, "middle");
+
+  // The harness: the part you can change.
+  drawCard(380, 100, 420, 400, BLUE, HARNESS_FILL);
+  addText(404, 141, "The harness", 34, INK, true);
+  addText(776, 139, "OpenClaw", 17, MUTED, false, "end");
+
+  drawCard(404, 160, 372, 140, CARD_STROKE, "#ffffff");
+  addText(426, 193, "Builds context", 26, INK, true);
+  const strips = [["instructions", 40, LIGHT_BLUE, ""], ["memory", 52, LIGHT_BLUE, ""], ["history", 232, BLUE, "the whole week's chat"]];
+  strips.forEach(([label, width, fill, note], i) => {
+    const y = 212 + i * 26;
+    addText(426, y + 11, label, 14, MUTED);
+    addRect(526, y, width, 14, fill);
+    if (note) addText(538, y + 11, note, 12, "#ffffff");
+  });
+
+  drawCard(404, 312, 372, 76, CARD_STROKE, "#ffffff");
+  addText(426, 344, "Runs tools", 26, INK, true);
+  addText(426, 372, "Files · calendar · reminders · web", 17, MUTED, false, "start", 330);
+
+  drawCard(404, 400, 372, 86, CARD_STROKE, "#ffffff");
+  addText(426, 430, "Delivers or stays silent", 24, INK, true, "start", 330);
+  addText(426, 455, "whole reply is NO_REPLY  →  nothing is sent", 14, MUTED, false, "start", 330);
+  addText(426, 476, "anything else  →  sent to you", 14, BLUE, false, "start", 330, "600");
+
+  // The model: the part you swap.
+  drawCard(900, 160, 190, 230, INK, "#ffffff");
+  addText(995, 229, "Model", 34, INK, true, "middle");
+  addText(995, 268, "Requests a tool", 18, MUTED, false, "middle", 170);
+  addText(995, 294, "or writes", 18, MUTED, false, "middle");
+  addText(995, 320, "an answer", 18, MUTED, false, "middle");
+  addText(995, 362, "repeats 2 and 3 as needed", 14, MUTED, false, "middle", 176);
+
+  // The loop, numbered in the order a trace shows it.
+  const hops = [["1  context", 200, true], ["2  tool call", 255, false], ["3  tool result", 310, true], ["4  answer", 365, false]];
+  for (const [label, y, outward] of hops) {
+    if (outward) drawArrow(812, y, 888, y, BLUE); else drawArrow(888, y, 812, y, BLUE);
+    addText(850, y - 9, label, 14, BLUE, false, "middle", 96, "600");
+  }
+
+  const overflow = [];
+  for (const node of svg.querySelectorAll("text")) {
+    const bounds = node.getBBox();
+    if (bounds.x < 8 || bounds.y < 8 || bounds.x + bounds.width > 1192 || bounds.y + bounds.height > 592 ||
+        (node.dataset.maxWidth && bounds.width > Number(node.dataset.maxWidth))) overflow.push(node.textContent);
+  }
+  document.title = overflow.length ? "OVERFLOW: " + overflow.join(" | ") : "ready: no overflow";
+  document.body.dataset.render = overflow.length ? "overflow" : "ready";
+}
+
+document.fonts.load('34px "Virgil"').then(drawDiagram);
+</script>
+</body></html>

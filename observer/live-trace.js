@@ -4,6 +4,12 @@ import { createHash } from "node:crypto";
 const state = globalThis[Symbol.for("openclaw.phoenix.live-trace.v1")] ??= { options: {}, runs: new Map(), clean: String };
 const VERSION = "live-conversations-v1";
 
+/** Derive the session-key prefixes that identify one agent's sessions and its tagged evaluations. */
+export function sessionPrefixes(agentId) {
+  const agent = `agent:${agentId}:`;
+  return { agent, evaluation: `${agent}phoenix-eval-` };
+}
+
 /** Enable the bridge only through the observer's explicit configuration. */
 export function configureLiveCapture(options, cleanText) {
   state.options = { ...options };
@@ -12,12 +18,14 @@ export function configureLiveCapture(options, cleanText) {
 
 /** Resolve a permitted run without reading model content from other agents. */
 function findRun(event) {
-  if (!state.options.liveExport || !event?.runId) return null;
+  const { agentId } = state.options;
+  if (!state.options.liveExport || !agentId || !event?.runId) return null;
   const existing = state.runs.get(event.runId);
   const key = event.sessionKey ?? existing?.sessionKey;
-  if (typeof key !== "string" || !key.startsWith("agent:minilda:")) return null;
-  if (state.options.sessionScope !== "all" && !key.startsWith("agent:minilda:phoenix-eval-")) return null;
-  if (event.agentId && event.agentId !== "minilda") return null;
+  const prefixes = sessionPrefixes(agentId);
+  if (typeof key !== "string" || !key.startsWith(prefixes.agent)) return null;
+  if (state.options.sessionScope !== "all" && !key.startsWith(prefixes.evaluation)) return null;
+  if (event.agentId && event.agentId !== agentId) return null;
   const now = Date.now();
   // Bound the correlation cache; durable transcripts remain on disk.
   for (const [id, item] of state.runs) if (now - item.touchedAt > 3600000) state.runs.delete(id);
@@ -44,7 +52,7 @@ export function buildSessionAttributes(event) {
   if (!run) return {};
   const kind = run.trigger === "heartbeat" || run.sessionKey.endsWith(":heartbeat") ? "heartbeat"
     : run.sessionKey.includes(":cron:") ? "cron"
-    : run.sessionKey.startsWith("agent:minilda:phoenix-eval-") ? "evaluation" : "conversation";
+    : run.sessionKey.startsWith(sessionPrefixes(state.options.agentId).evaluation) ? "evaluation" : "conversation";
   const identity = run.sessionId ?? run.runId;
   const id = createHash("sha256").update(identity).digest("hex").slice(0, 24);
   return { "session.id": `openclaw:${kind}:${id}`, "openclaw.presentation.version": VERSION,
@@ -137,8 +145,9 @@ export function buildRunAttributes(event, policy) {
 
 /** Keep aggregate counters as diagnostics without charging model tokens twice. */
 export function markAggregateUsage(attributes, event) {
-  const prefix = state.options.sessionScope === "all" ? "agent:minilda:" : "agent:minilda:phoenix-eval-";
-  if (!state.options.liveExport || !event?.sessionKey?.startsWith(prefix)) return;
+  const prefixes = sessionPrefixes(state.options.agentId);
+  const prefix = state.options.sessionScope === "all" ? prefixes.agent : prefixes.evaluation;
+  if (!state.options.liveExport || !state.options.agentId || !event?.sessionKey?.startsWith(prefix)) return;
   for (const key of Object.keys(attributes)) {
     if (key.startsWith("llm.token_count.") || key.startsWith("gen_ai.usage.") || key.startsWith("llm.cost.")) delete attributes[key];
   }

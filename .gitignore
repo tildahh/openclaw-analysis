@@ -1,4 +1,3 @@
-# Public guide and reusable code only. Private records and original screenshots stay local.
 /*
 !/.gitignore
 !/.env.example
@@ -10,22 +9,10 @@
 !/scripts/__init__.py
 !/scripts/extract_heartbeats.py
 !/scripts/export_trace.py
-
-!/evals/
-/evals/*
-!/evals/__init__.py
-!/evals/judge_heartbeats.py
+!/scripts/judge_heartbeats.py
+!/scripts/figures/
 
 !/observer/
-/observer/*
-!/observer/README.md
-!/observer/index.js
-!/observer/live-trace.js
-!/observer/openclaw.plugin.json
-!/observer/package.json
-!/observer/patch-native-exporter.py
-!/observer/test-live-trace.js
-!/observer/test-observer.js
 
 !/prompts/
 /prompts/*
@@ -33,12 +20,6 @@
 !/prompts/heartbeat-before.md
 !/prompts/heartbeat-after.md
 
-!/docs/
-/docs/*
-!/docs/live-conversation-exporter.md
-tests/*
-
-# Only the reviewed figures referenced by the README are publishable.
 !/figures/
 /figures/*
 !/figures/correctness-by-model.png
@@ -46,15 +27,16 @@ tests/*
 !/figures/heartbeat-after-no-reply-output.png
 !/figures/heartbeat-before-no-reply-excerpt.png
 !/figures/heartbeat-context-counts-highlighted.png
-!/figures/heartbeat-day-labels.png
 !/figures/model-and-harness-v2.png
 !/figures/model-completion-time.png
-!/figures/openclaw-stars.png
 !/figures/phoenix-models-dashboard.png
 !/figures/phoenix-models-judge-scores.png
 !/figures/runtime-distribution.png
 !/figures/task-completion-grid.png
 !/figures/task-judges-vs-review.png
+!/figures/trace-readable-export.png
+!/figures/heartbeat-before-after.png
+!/figures/phoenix-sessions-list.png
 
 __pycache__/
 .DS_Store
