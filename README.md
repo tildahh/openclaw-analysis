@@ -373,12 +373,12 @@ Add `unsure` for runs where the evidence cannot support a decision, and count a 
 
 Once you have labels, check whether an LLM judge produces the same ones. Compare it with a trivial judge as well, because always picking the most common label also scores well on raw agreement.
 
-I used GPT-6 Sol as the judge, with [this prompt](prompts/heartbeat-judge.md). It scored 24 of the 27 heartbeats I labeled:
+I used GPT-6 Sol as the judge, with [this prompt](prompts/heartbeat-judge.md). It scored 24/27 labeled heartbeats:
 
 | Judge | Agreed with my labels |
 |---|---|
-| GPT-6 Sol | 20 of 24 (83%), Cohen's κ 0.73 |
-| Always `redundant` | 13 of 24 (54%) |
+| GPT-6 Sol | 20/24 (83%), Cohen's κ 0.73 |
+| Always `redundant` | 13/24 (54%) |
 
 The four disagreements:
 
@@ -437,7 +437,7 @@ My assistant often misread information it had already found, so I added this ins
 
 > "Before giving a final answer, check that it fulfills the user's request and that its decision-critical claims agree with the evidence you retrieved."
 
-I ran the original and revised instructions once on each task, so treat the differences as leads to recheck rather than measured effects. The revised instructions met 31 of 52 requirements and used about 6% more tokens.
+I ran the original and revised instructions once on each task, so treat the differences as leads to recheck rather than measured effects. The revised instructions met 31/52 requirements and used about 6% more tokens.
 
 - **Fixed:** it corrected an event deadline.
 - **Broke:** the weekly reading list. The original run opened the course guide and the reading list and returned six reading links, two to read and four to skim. The revised run read only the index pages and told me to sign in to the course website myself.
@@ -457,8 +457,8 @@ Use a comparison view to inspect answers to the same request side by side with t
 
 To compare models, run each on the same tasks more than once. I tested six models on nine tasks, three attempts per task, including my assistant's model at the time, Qwen-3.5 122B. The [scatter plot at the top of this guide](#what-i-found) compares median time per task with the share of attempts an LLM judge marked complete.
 
-- **DeepSeek** had the highest completion share, 24 of 27 attempts, at about 3.8 minutes per task.
-- **GLM 5.3 Flash** completed 21 of 27 in about half the median time. With 27 attempts each, that gap could be chance (Fisher's exact test, p = 0.47), so speed decided my switch to GLM.
+- **DeepSeek** had the highest completion share, 24/27 attempts, at about 3.8 minutes per task.
+- **GLM 5.3 Flash** completed 21/27 in about half the median time. With 27 attempts each, that gap could be chance (Fisher's exact test, p = 0.47), so speed decided my switch to GLM.
 - **Qwen-3.6** was the fastest at 1.76 minutes and had the lowest completion score, 0.59.
 - **Muse 30B** was the slowest at 6.28 minutes, despite having the fewest total parameters.
 
@@ -492,7 +492,7 @@ So I had every answer reviewed for correctness as well. The review checked each 
 
 *Rows are ordered by answers without a contradicted claim.*
 
-- **Muse** had the most answers confirmed correct, 7 of 27, though that varied from pass to pass (2, 4 and 1).
+- **Muse** had the most answers confirmed correct, 7/27, though that varied from pass to pass (2, 4 and 1).
 - **DeepSeek**, with the highest completion share, still had 12 answers with a contradicted claim.
 - **Flights:** all 18 answers were marked complete, but none was confirmed correct. 17 contradicted the search results and one could not be verified.
 - **GLM and DeepSeek:** the review backed the switch. GLM had 6 answers confirmed correct against DeepSeek's 4, with 12 contradicted each, and its slowest attempt took 6.5 minutes against DeepSeek's 18 and one timeout.
@@ -515,7 +515,7 @@ An experiments table shows the scores side by side, one row per model, each aver
 
 [![Experiments table comparing six models across task completion, faithfulness, tool selection, tool response handling and retrieval relevance. Scores in that order: DeepSeek V4 Flash 284B: 0.88, 0.22, 0.40, 0.14, 0.85; GLM 5.3 Flash 320B: 0.77, 0.18, 0.44, 0.11, 0.88; Muse 30B: 0.62, 0.14, 0.40, 0.03, 0.85; Nemotron 120B: 0.66, 0.03, 0.33, 0.00, 0.88; Qwen-3.5 122B: 0.70, 0.14, 0.70, 0.11, 0.88; Qwen-3.6 35B: 0.59, 0.03, 0.44, 0.00, 0.88.](figures/phoenix-models-judge-scores.png)](figures/phoenix-models-dashboard.png)
 
-*Click the table for the full dashboard. It truncates scores (24 of 27 shows as 0.88) and counts answers a judge could not score as 0, which is why retrieval relevance shows 0.85–0.88 although it passed every answer it scored.*
+*Click the table for the full dashboard. It truncates scores (24/27 shows as 0.88) and counts answers a judge could not score as 0, which is why retrieval relevance shows 0.85–0.88 although it passed every answer it scored.*
 
 Open a scored run to read the answer next to the judge's explanation, then filter the traces for that label to find similar answers. Use those examples to decide what to change, and rerun the same tasks to see whether it helped.
 
@@ -527,7 +527,7 @@ Each judge measures something different, and its name does not say which errors 
 
 *Judges ordered from most lenient to strictest by the share of contradicted answers they flagged.*
 
-- **Task completion** passed 62 of 87 answers that contradicted their sources. An answer can cover the request and still get important details wrong.
+- **Task completion** passed 62/87 answers that contradicted their sources. An answer can cover the request and still get important details wrong.
 - **Faithfulness**, the only one of the five designed to check claims against sources, caught most contradicted answers but also rejected some correct ones.
 - **Retrieval relevance** passed every answer it could score, so it did not separate the models.
 
@@ -589,7 +589,7 @@ The manual `/new` reset was separate from enabling fresh sessions and had alread
 
 <br>
 
-To choose between GPT-6 Sol and GPT-6 Astra, each scored a separate set of 24 calibration cases three times: transcript excerpts and synthetic fixtures with proposed labels that had not been reviewed. Sol matched those labels on 67 of 72 runs and repeated the same label for 23 of 24 cases. Astra matched 59 of 72 and returned `unsure` 10 times. The proposed labels only selected the judge. The 83% agreement above comes from the 24 live heartbeats I labeled afterwards.
+To choose between GPT-6 Sol and GPT-6 Astra, each scored a separate set of 24 calibration cases three times: transcript excerpts and synthetic fixtures with proposed labels that had not been reviewed. Sol matched those labels on 67/72 runs and repeated the same label for 23/24 cases. Astra matched 59/72 and returned `unsure` 10 times. The proposed labels only selected the judge. The 83% agreement above comes from the 24 live heartbeats I labeled afterwards.
 
 </details>
 
@@ -603,7 +603,7 @@ A pass is one run through all nine tasks, and an attempt is one task in one pass
 | Comparison | Repetitions | Recorded result |
 |---|---|---|
 | Baseline prompt versus final-answer check | One pass per condition across nine tasks | Revised prompt: 31 PASS, 18 FAIL and 3 `UNSURE` requirement verdicts out of 52, with about 6% more tokens |
-| Baseline prompt with 12 added tools | Three passes across nine tasks | 89 of 156 requirements marked PASS (57%) |
+| Baseline prompt with 12 added tools | Three passes across nine tasks | 89/156 requirements marked PASS (57%) |
 | Six-model comparison | Three passes per model across nine tasks | 162 planned attempts, of which 159 were substantive answers and 3 no-answer outcomes |
 
 The model dashboard includes a replacement run for a Qwen setup failure, so its population differs from the original tool comparison.
@@ -626,12 +626,12 @@ The results describe each model together with its serving setup. Most runs used 
 - **Variation across passes.** Muse had 2, 4 and 1 confirmed-correct answers across its passes, and GLM had 1, 3 and 2.
 - **Time spent generating text.** GLM generated about 98 characters per second, DeepSeek 147 and Muse 34. Muse model calls took about 35 seconds against GLM's 10, and tasks took 6.3 against 2.1 minutes. Most task time was in model calls, with tools taking seconds.
 - **Model architecture.** Muse is dense, using all 30B parameters for each token. Qwen-3.6 has 35B total parameters and uses 3B per token. Hardware and serving differences prevent attributing the timing gap to architecture alone.
-- **Invalid tool calls.** Muse produced garbled calls in 7 of 27 tasks. Of 19 rejected calls, it repaired 12 on the next turn. Another 12 calls ran with an argument dropped, including a 60-day calendar request reduced to today. Twice, tool-call markup was delivered as the answer. Qwen-3.6 had one rejected call and repaired it; the other models had none.
+- **Invalid tool calls.** Muse produced garbled calls in 7/27 tasks and repaired 12/19 rejected calls on the next turn. Another 12 calls ran with an argument dropped, including a 60-day calendar request reduced to today. Twice, tool-call markup was delivered as the answer. Qwen-3.6 had one rejected call and repaired it; the other models had none.
 - **Concurrent tool calls.** DeepSeek and Qwen-3.6 sent several calls together in 70–80% of their tool turns. Nemotron called tools sequentially.
-- **Weekday calculations.** Five models sometimes used weekdays from the previous year's calendar. Qwen-3.6 got 32 of 33 weekdays wrong across its study plans, GLM got 10 of 41 wrong, and DeepSeek got all 25 right.
-- **Links absent from retrieved evidence.** Two of Nemotron's 29 links were absent from its sources. In its earlier 10-minute passes, 4 of 34 were absent, including a malformed paper link. Other models used retrieved links or built them from retrieved identifiers.
+- **Weekday calculations.** Five models sometimes used weekdays from the previous year's calendar. Qwen-3.6 got 32/33 weekdays wrong across its study plans, GLM got 10/41 wrong, and DeepSeek got 25/25 right.
+- **Links absent from retrieved evidence.** Of Nemotron's links, 2/29 were absent from its sources, and 4/34 in its earlier 10-minute passes, including a malformed paper link. Other models used retrieved links or built them from retrieved identifiers.
 - **Form interactions.** Qwen-3.6 filled 12 hackathon-registration fields and requested missing details before offering submission. No other model filled a form.
-- **Explicit uncertainty.** DeepSeek stated what it could not verify in 6 of 27 answers. No other model did so more than three times.
+- **Explicit uncertainty.** DeepSeek stated what it could not verify in 6/27 answers. No other model did so more than three times.
 
 
 </details>
