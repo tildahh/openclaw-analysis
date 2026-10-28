@@ -423,11 +423,7 @@ The heartbeat checks found what went wrong in live use, where no two days are th
 | Travel | Finding flights for a trip |
 | Model training and research | Calculating LoRA parameters, finding a benchmark for AI agents |
 
-Choose tasks that use different tools, write down what a good answer needs to include before running them, and test every change on the same tasks. For each run:
-
-1. Start a fresh session with the same files. Remove previous answers and drafts so the assistant starts from scratch.
-2. Save the request, settings, answer, and tool results. Record any errors or timeouts.
-3. Check the answer against your requirements and the sources it used.
+Choose tasks that use different tools, and write down what a good answer needs to include before running them. Test every change on the same tasks, and start each run in a fresh session with earlier answers and drafts removed, so one run can't borrow from another.
 
 An answer can be complete and still wrong: a missing booking link makes it incomplete, and a flight duration that contradicts the search result makes it wrong. I used an AI coding assistant to review the answers against the requirements and cite evidence for each decision.
 
