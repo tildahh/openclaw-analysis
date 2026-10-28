@@ -414,7 +414,14 @@ The judge was more generous with the same 20 messages, rating 14 somewhat useful
 
 ## Write your own benchmark
 
-The heartbeat work showed what the assistant did wrong from day to day. To compare instructions, tools and models fairly, I needed a fixed benchmark built from the tasks I actually want my assistant to do: nine everyday tasks covering flights, coursework, event preparation and model-training calculations, saved as a dataset in Phoenix.
+The heartbeat work showed what the assistant did wrong from day to day. To compare instructions, tools and models fairly, I needed a fixed benchmark built from the tasks I actually want my assistant to do. Mine has nine, saved as a dataset in Phoenix:
+
+| Area | Tasks |
+|---|---|
+| Coursework | Weekly course readings, assignment preparation, a study plan |
+| Events | Hackathon prep, conference prep, an event follow-up |
+| Travel | A flight shortlist |
+| Model training and research | A LoRA parameter calculation, finding an agent benchmark |
 
 Choose tasks that use different tools, write down what a good answer needs to include before running them, and test every change on the same tasks. For each run:
 
@@ -475,8 +482,6 @@ Inspect individual runtimes to see whether a fast median hides occasional long w
 *Each dot is an attempt and the cross marks a recorded timeout. Black ticks mark medians, and rows are ordered by them. Hardware and serving settings differed. [Methodology](#runtime-distribution-methodology).*
 
 One DeepSeek attempt timed out after 20.11 minutes, and Muse's longest took 13.01 minutes against its 6.28-minute median.
-
-Per task, only 2/18 attempts at the study-plan task were marked complete, and only GLM and DeepSeek had all three weekly-readings attempts marked complete.
 
 A completion score does not tell you whether every detail is correct. In an earlier Muse 30B run, outside the 27 attempts above, the tool returned a 30-hour return trip, which the assistant claimed was only 22 hours. Comparing the model's input and output in the trace exposed the mistake:
 
