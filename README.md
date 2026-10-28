@@ -380,13 +380,17 @@ I used GPT-6 Sol as the judge, with [this prompt](prompts/heartbeat-judge.md). I
 | GPT-6 Sol | 20/24 (83%), Cohen's κ 0.73 |
 | Always `redundant` | 13/24 (54%) |
 
-The four disagreements:
+Of its four disagreements, the worst approved a silence that missed a reminder. The judge reasoned that a chat reply minutes earlier had already mentioned it, but I count only a heartbeat message as a reminder. A judge that calls a missed reminder a correct silence hides the failure you are looking for, so read each disagreement, not just the rate.
+
+<details>
+<summary><b>The other three disagreements</b></summary>
+
+<br>
 
 - It dismissed one message that I thought contained useful new information.
 - It was unsure about two silences I considered correct. Neither run had checked the calendar or reminders, so the judge had no evidence to decide with.
-- **It approved one silence that missed a reminder,** reasoning that a chat reply minutes earlier had already mentioned it. I count only a heartbeat message as a reminder.
 
-A judge that calls a missed reminder a correct silence hides the failure you are looking for, so read each disagreement, not just the rate.
+</details>
 
 > [!TIP]
 > Save the judge's labels on the traces. In Phoenix they become annotations, so you can filter for every heartbeat labeled `redundant` and read the messages behind them.
