@@ -519,8 +519,8 @@ How often each judge passed each model's answers, across three attempts at nine 
 | Model | Task completion<br>of 27 | Tool selection<br>of 27 | Faithfulness<br>of 23–24 | Tool response handling<br>of 23–24 | Retrieval relevance<br>of 23–24 |
 |---|---|---|---|---|---|
 | DeepSeek V4 Flash 284B | 89% | 41% | 26% | 17% | 100% |
-| GLM 5.3 Flash 320B | 78% | 44% | 21% | 12% | 100% |
-| Qwen-3.5 122B | 70% | 70% | 17% | 12% | 100% |
+| GLM 5.3 Flash 320B | 78% | 44% | 21% | 13% | 100% |
+| Qwen-3.5 122B | 70% | 70% | 17% | 13% | 100% |
 | Nemotron 120B | 67% | 33% | 4% | 0% | 100% |
 | Muse 30B | 63% | 41% | 17% | 4% | 100% |
 | Qwen-3.6 35B | 59% | 44% | 4% | 0% | 100% |
