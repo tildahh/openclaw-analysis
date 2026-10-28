@@ -10,15 +10,14 @@ This guide is the method I used to find the causes and test fixes, with OpenClaw
 
 | Finding | Evidence |
 |---|---|
-| Each heartbeat was re-reading the whole week's chat | 333 to 338 earlier messages per run. A fresh session for each heartbeat cut the first prompt from 188k to 21k tokens. |
-| All five baseline reports reached me by mistake | The instruction said to end with `NO_REPLY`, and OpenClaw suppresses a message only when the whole reply is the token. |
-| The heartbeat judge matched 20 of my 24 labels | Cohen's κ 0.73, agreement corrected for chance. Its worst miss called a missed reminder a correct silence. |
-| The completion judge passed 62 of 87 answers that contradicted their sources | Every flight answer was marked complete, and 17 of the 18 contradicted the search results. |
+| Each heartbeat was re-reading the whole week's chat | A fresh session for each heartbeat cut the first prompt (188k → 21k tokens). |
+| All five baseline messages reached me by mistake | The instruction said to end with `NO_REPLY`, and OpenClaw suppresses a message only when the whole reply is the token. |
+| The LLM judge and I agreed on 20 of 24 heartbeats | Cohen's κ 0.73, agreement corrected for chance. Its worst miss called a missed reminder a correct silence. |
 | Switching models traded three completed attempts for half the time per task | DeepSeek: 24 of 27 attempts complete at a median 3.8 minutes per task. GLM 5.3 Flash: 21 of 27 at 2.1 minutes. I switched to GLM. |
 
 [![Scatter plot of six models by median task time and mean task-completion score. Qwen-3.6 35B: 1.76 minutes, 0.59; Qwen-3.5 122B: 2.73 minutes, 0.70; Nemotron 120B: 3.64 minutes, 0.67; Muse 30B: 6.28 minutes, 0.63; GLM 5.3 Flash 320B: 2.08 minutes, 0.78; DeepSeek V4 Flash 284B: 3.81 minutes, 0.89.](figures/model-completion-time.png)](figures/model-completion-time.png)
 
-*Six local models on my nine everyday tasks, three attempts each: median time per task against the share of attempts an LLM judge marked complete. GLM and DeepSeek ran across two machines at a higher reasoning effort, so read their times with that in mind. The ring marks GLM 5.3 Flash, which replaced Qwen-3.5 122B as my assistant's model.*
+*Six local models on my nine everyday tasks, three attempts each: median time per task against the share of attempts an LLM judge marked complete. The ring marks GLM 5.3 Flash, which replaced Qwen-3.5 122B as my assistant's model.*
 
 ## The loop
 
@@ -36,17 +35,17 @@ flowchart LR
 
 ## How the assistant works
 
-![A hand-drawn diagram. A message or a scheduled heartbeat starts a run in the harness, drawn as the largest box. The harness builds the context, shown as three strips in which conversation history is far longer than instructions or memory, runs tools, and then either delivers the reply or sends nothing when the whole reply is NO_REPLY. Four numbered arrows carry the context to the model, a tool call back, the tool result out again, and the answer back. A dashed frame around the harness and the model is the tracing backend, which records each model call and tool call as a span.](figures/model-and-harness-v2.png)
+![A hand-drawn diagram. A message or a scheduled heartbeat starts a run in the harness, drawn as the largest box. The harness builds the context, shown as three strips in which conversation history is far longer than instructions or memory, and runs tools. Four numbered arrows carry the context to the model, a tool call back, the tool result out again, and the answer back, and the harness delivers the reply to you. A dashed frame around the harness and the model is the tracing backend, which records each model call and tool call as a span.](figures/model-and-harness-v2.png)
 
-*Blue is the harness and scaffold, the parts I changed. The outlined box is the model, which I compared. Everything inside the dashed frame is recorded. The long history bar is what I found before enabling fresh sessions.*
+*Blue is the harness and scaffold, the parts I changed. The outlined box is the model, which I compared.*
 
-An agent is a model plus a harness, the loop that runs it. Following [Hugging Face's agent glossary](https://huggingface.co/blog/agent-glossary), this guide also separates out the scaffold, the part that shapes the model's behavior, so each change can be tested one layer at a time.
+An agent is a model plus the harness that runs it. Following [Hugging Face's agent glossary](https://huggingface.co/blog/agent-glossary), this guide also separates out the scaffold, the part that shapes the model's behavior, so each change can be tested one layer at a time.
 
 | Layer | What it is | In my assistant | What I changed |
 |---|---|---|---|
 | Model | The LLM: text in, text out, with no loop or memory of its own | Qwen-3.5 122B | Switched to GLM 5.3 Flash |
 | Scaffold | Shapes behavior: instructions, tool descriptions, how the reply is parsed | Heartbeat instructions, tool descriptions, the `NO_REPLY` rule | Silence rule, source checks, 12 MCP tools, final-answer check |
-| Harness | Runs the loop: calls the model, runs its tool calls, decides when to stop | OpenClaw, which also supplies history and memory | A fresh session for each heartbeat |
+| Harness | Runs the loop: calls the model, runs its tool calls, decides when to stop | OpenClaw, which also decides what history and memory go into the context | A fresh session for each heartbeat |
 
 ```python
 def run_assistant(trigger):
@@ -62,7 +61,7 @@ def run_assistant(trigger):
     send_to_chat(reply.text)
 ```
 
-The last three lines are the delivery rule: the assistant stays quiet only when its entire reply is `NO_REPLY`.
+The last three lines dictate whether a message is sent or the run stops with `NO_REPLY`.
 
 ## Observability
 
@@ -164,11 +163,7 @@ openclaw gateway restart
 
 A trace is a tree of spans. The root span stands for the whole run, and the model calls and tool calls nest under it. A trace viewer lists runs by their root span, so its name, request and reply are what you read when you review a day. Out of the box, those were generic or empty, as the table below shows, and you cannot review a day of heartbeats that way.
 
-I wrote an [observer plugin](observer/) that names each run, fills in its request and reply, and groups a conversation's turns into one session. It writes standard [OpenInference](https://github.com/Arize-ai/openinference) attributes such as `session.id` and `input.value`. Phoenix uses them to group and display runs, and other backends show them as plain attributes. Saved runs can also be re-exported offline as the readable trace below.
-
-[![A request with the readable export: the root is an agent span named by the task, the Input panel shows the user's question, the Output panel shows the final answer, and the child spans are numbered model and tool steps that carry the tool's name, plus recorded reasoning.](figures/trace-readable-export.png)](figures/trace-readable-export.png)
-
-*Readable export: the root carries the request and the final answer, and each step is named for what it did.*
+I wrote an [observer plugin](observer/) that names each run, fills in its request and reply, and groups a conversation's turns into one session. It writes standard [OpenInference](https://github.com/Arize-ai/openinference) attributes such as `session.id` and `input.value`. Phoenix uses them to group and display runs, and other backends show them as plain attributes.
 
 | Trace detail | Default export | With the plugin |
 |---|---|---|
@@ -179,9 +174,11 @@ I wrote an [observer plugin](observer/) that names each run, fills in its reques
 | Token counts | Aggregate usage counted as an extra model call | Per-call usage, with the aggregate kept as a diagnostic counter |
 | Recorded reasoning | Not exported | Optional, bounded and credential-redacted |
 
-[![Sessions list with the plugin: rows labeled Heartbeat, Scheduled task or Conversation with their median run time, tokens across calls and trace count; one conversation holds 558 traces. A stats panel shows 320 sessions, about three traces per session, and median and 99th-percentile durations.](figures/phoenix-sessions-list.png)](figures/phoenix-sessions-list.png)
+Saved runs can also be re-exported offline, with each step named for what it did:
 
-*The sessions view with the plugin in place: each run arrives as a Heartbeat, Scheduled task or Conversation, and a conversation's turns group into one session, here 558 traces.*
+[![A request with the readable export: the root is an agent span named by the task, the Input panel shows the user's question, the Output panel shows the final answer, and the child spans are numbered model and tool steps that carry the tool's name, plus recorded reasoning.](figures/trace-readable-export.png)](figures/trace-readable-export.png)
+
+*One saved run, re-exported offline: the root carries the request and the final answer.*
 
 <a id="observer-plugin"></a>
 <details>
@@ -270,7 +267,7 @@ flowchart TD
     TL --> M
     Q -- no --> R{"Whole reply is NO_REPLY?"}
     R -- yes --> S["Nothing is sent"]
-    R -- no --> D["Message sent<br/>Same lines as the last report?"]
+    R -- no --> D["Message sent<br/>Same lines as the last one?"]
     classDef default fill:#FBFBF9,stroke:#2A78D6,stroke-width:1.5px,color:#1F2328
     linkStyle default stroke:#6B7280,stroke-width:1.5px
 ```
@@ -278,7 +275,7 @@ flowchart TD
 - [ ] **Context size:** read the input tokens of the first model call.
 - [ ] **Tool use:** look for calendar and reminder calls before the decision.
 - [ ] **Reply format:** trim whitespace and compare the whole reply to `NO_REPLY`.
-- [ ] **Repetition:** compare lines with the previous report.
+- [ ] **Repetition:** compare lines with the previous message.
 
 The [extraction script](scripts/extract_heartbeats.py) pulls each heartbeat's reply, tool calls and token usage from OpenClaw's transcript store, and removes recognized contact and credential patterns. Set `--host` to the SSH destination of the machine running OpenClaw:
 
@@ -286,7 +283,7 @@ The [extraction script](scripts/extract_heartbeats.py) pulls each heartbeat's re
 python3 -m scripts.extract_heartbeats --host user@host --since YYYY-MM-DD
 ```
 
-These checks showed my assistant copying earlier reports and adding `NO_REPLY` to the end of each one.
+These checks showed my assistant copying earlier messages and adding `NO_REPLY` to the end of each one.
 
 ## Reduce repeated and unnecessary messages
 
@@ -294,7 +291,7 @@ If your assistant keeps repeating itself, check three things in order: what the 
 
 ### Harness: check what the run can see
 
-When a scheduled run copies an earlier message, check how much history went into its context. In Phoenix, filter for the `openclaw.context.assembled` span. At first, each of my heartbeats carried 333 to 338 earlier messages, nearly half a million characters of conversation history:
+When a scheduled run copies an earlier message, check how much history went into its context. In Phoenix, filter for the `openclaw.context.assembled` span. At first, each of my heartbeats carried 333–338 earlier messages, nearly half a million characters of conversation history:
 
 ![Cropped Phoenix context attributes showing 338 messages, outlined in red, and 492061 characters of conversation history.](figures/heartbeat-context-counts-highlighted.png)
 
@@ -306,7 +303,7 @@ If each run receives the full conversation, give it a fresh session. In OpenClaw
 "heartbeat": { "isolatedSession": true }
 ```
 
-A manual chat reset had already stopped the copied reports. Fresh sessions kept the first prompt at 21k tokens, down from 188k, and kept copying low, but they did not stop all unnecessary messages.
+A manual chat reset had already stopped the copying. Fresh sessions kept copying low and the first prompt small (188k → 21k tokens), but they did not stop all unnecessary messages.
 
 ### Scaffold: match the instructions to the delivery rule
 
@@ -318,7 +315,7 @@ If the assistant says "nothing changed" but still sends a message, check its ins
 + NO_REPLY means no message reaches the user; anything else you write is delivered.
 ```
 
-My old instruction allowed a full status report before `NO_REPLY`, so I received the report every time:
+My old instruction allowed any text before `NO_REPLY`, so I received the whole message every time:
 
 <table>
   <tr>
@@ -330,21 +327,21 @@ My old instruction allowed a full status report before `NO_REPLY`, so I received
     <td><img src="figures/heartbeat-after-no-reply-output.png" width="100%" alt="Cropped model-call output after the instruction changes: the whole reply is NO_REPLY."></td>
   </tr>
   <tr>
-    <td>Text before <code>NO_REPLY</code> meant the report was delivered.</td>
+    <td>Text before <code>NO_REPLY</code> meant the message was delivered.</td>
     <td>The whole reply is <code>NO_REPLY</code>, so nothing is sent.</td>
   </tr>
 </table>
 
 ### Scaffold: require current sources
 
-After the silence-rule change, which went in with a broader prompt rewrite, the assistant stayed quiet more often. But two consecutive runs stayed quiet through the same due reminder, and the first made no tool calls at all. So I required a calendar and reminders check before any silence.
+After the silence-rule change, which went in with a broader prompt rewrite, the assistant stayed quiet more often. But two consecutive runs stayed silent while an urgent reminder was due, and the first made no tool calls at all. So I required a calendar and reminders check before any silence.
 
 Each change fixed one problem and exposed the next:
 
 | Change | Fixed | Exposed |
 |---|---|---|
-| Chat reset, then fresh sessions | Copied reports | Reports still sent with `NO_REPLY` at the end |
-| Silence rule, with a prompt rewrite | Reports with `NO_REPLY` attached | Two silences through a due reminder |
+| Chat reset, then fresh sessions | Copied messages | Messages still sent with `NO_REPLY` at the end |
+| Silence rule, with a prompt rewrite | Messages with `NO_REPLY` attached | Two silences while an urgent reminder was due |
 | Calendar and reminders check before silence | Missed reminders | A reminder sent again after it had already gone out |
 
 The changes overlapped, so none was tested on its own. The counts for every phase are in the [appendix](#heartbeat-observation-records).
@@ -389,15 +386,15 @@ After the changes, check another sample. Does the assistant still look up curren
 
 I labeled another 23 heartbeats the following day. All of them checked the calendar and reminders, and none appended `NO_REPLY` to a longer message.
 
-![Four before-and-after comparisons. Context at the start of each run: 188k tokens before, 27k after. Reports delivered with NO_REPLY attached: 5 of 5 before, 0 of 23 after. Heartbeats worth hearing: 0 of 5 before, 9 of 23 after. Correct silences: 0 of 5 before, 3 of 23 after.](figures/heartbeat-before-after.png)
+![Four before-and-after comparisons. Context at the start of each run: 188k tokens before, 27k after. Messages delivered with NO_REPLY attached: 5 of 5 before, 0 of 23 after. Heartbeats worth hearing: 0 of 5 before, 9 of 23 after. Correct silences: 0 of 5 before, 3 of 23 after.](figures/heartbeat-before-after.png)
 
-*Before: the first five heartbeats, each carrying the whole week's chat. After: the next day's 23, with fresh sessions, the rewritten silence rule, source checks and 12 added tools, whose definitions raised the first prompt from 21k to 27k tokens. Worth hearing and correct silences are my labels, and the assistant ran Qwen-3.5 122B throughout.*
+*Before: the first five heartbeats, each carrying the whole week's chat. After: the next day's 23, with fresh sessions, the rewritten silence rule, source checks and 12 added tools, whose definitions raised the first prompt (21k → 27k tokens). Worth hearing and correct silences are my labels, and the assistant ran Qwen-3.5 122B throughout.*
 
 By my labels, 9 of the 20 messages were useful or somewhat useful and the three silences were correct, but 11 messages were redundant: nearly half the heartbeats still sent something I did not need. The judge was more generous with the same messages, rating 14 somewhat useful and 6 redundant, and agreed on the silences.
 
-## Build a fixed test set
+## Write your own benchmark
 
-The heartbeat work showed what the assistant did wrong from day to day. To compare instructions, tools and models fairly, I needed a fixed set of requests. Test every change on that set so you can see what improves and what gets worse. Choose tasks that use different tools, and write down what a good answer needs to include before running them.
+The heartbeat work showed what the assistant did wrong from day to day. To compare instructions, tools and models fairly, I needed a fixed benchmark built from the tasks I actually want my assistant to do. Test every change on it so you can see what improves and what gets worse. Choose tasks that use different tools, and write down what a good answer needs to include before running them.
 
 I used nine everyday tasks covering flights, coursework, event preparation, and model-training calculations, saved as a dataset in Phoenix. For each run:
 
@@ -420,7 +417,7 @@ I used an AI coding assistant to review the answers against the requirements and
 
 ### Scaffold: instructions
 
-Make a change that addresses a problem you found, then rerun the full test set, including the tasks that already worked.
+Make a change that addresses a problem you found, then rerun the whole benchmark, including the tasks that already worked.
 
 My assistant often misread information it had already found. I added this instruction:
 
@@ -499,7 +496,7 @@ An experiments table shows the scores side by side, one row per model, each aver
 
 [![Experiments table comparing six models across task completion, faithfulness, tool selection, tool response handling and retrieval relevance. Scores in that order: DeepSeek V4 Flash 284B: 0.88, 0.22, 0.40, 0.14, 0.85; GLM 5.3 Flash 320B: 0.77, 0.18, 0.44, 0.11, 0.88; Muse 30B: 0.62, 0.14, 0.40, 0.03, 0.85; Nemotron 120B: 0.66, 0.03, 0.33, 0.00, 0.88; Qwen-3.5 122B: 0.70, 0.14, 0.70, 0.11, 0.88; Qwen-3.6 35B: 0.59, 0.03, 0.44, 0.00, 0.88.](figures/phoenix-models-judge-scores.png)](figures/phoenix-models-dashboard.png)
 
-*Click the table for the full dashboard. It truncates scores (24 of 27 shows as 0.88) and counts answers a judge could not score as 0, which is why retrieval relevance shows 0.85 to 0.88 although it passed every answer it scored.*
+*Click the table for the full dashboard. It truncates scores (24 of 27 shows as 0.88) and counts answers a judge could not score as 0, which is why retrieval relevance shows 0.85–0.88 although it passed every answer it scored.*
 
 Open a scored run to read the answer next to the judge's explanation, then filter the traces for that label to find similar answers. Use those examples to decide what to change, and rerun the same tasks to see whether it helped.
 
@@ -522,8 +519,8 @@ Start with a failed run and use its trace to choose a change to test. Rerun the 
 
 | Symptom | Inspect in the trace | Change to test |
 |---|---|---|
-| **Repeats earlier reports** | Assembled context and the first model call's input | A fresh session per heartbeat (`isolatedSession: true`). Compare context size and repeated text. |
-| **Sends a report ending in `NO_REPLY`** | The exact final output, including text before the token | Require the whole reply to be `NO_REPLY` when nothing warrants a message. Count missed reminders too. |
+| **Repeats earlier messages** | Assembled context and the first model call's input | A fresh session per heartbeat (`isolatedSession: true`). Compare context size and repeated text. |
+| **Sends a message ending in `NO_REPLY`** | The exact final output, including text before the token | Require the whole reply to be `NO_REPLY` when nothing warrants a message. Count missed reminders too. |
 | **Stays silent when a reminder is due** | Calendar and reminder tool calls, their results, the final decision | Require current calendar and reminder lookups before choosing silence. |
 | **Repeats a reminder already sent** | Earlier notifications and whether the model input includes them | A sent-message log the assistant checks before sending (not tested here). |
 | **Gives details that contradict its sources** | The final answer next to the exact fields its tools returned | A final check against retrieved evidence, then a full rerun to catch regressions. |
@@ -550,9 +547,9 @@ Start with a failed run and use its trace to choose a change to test. Rerun the 
 | Heartbeats | 5 | 3 | 11 | 6 | 2 |
 | First-call prompt, median tokens | 188k | 53k | 21k | 21k | 27k |
 | Tokens per heartbeat, median | 373k | 106k | 94k | 45k | 62k |
-| Lines copied from previous report, recorded range | 78–100% | 0% | 0–29% | Not recorded | Not recorded |
+| Lines copied from previous message, recorded range | 78–100% | 0% | 0–29% | Not recorded | Not recorded |
 | Tool calls per heartbeat, range | 0–2 | 2 | 3–12 | 0–6 | 3–4 |
-| Reports with `NO_REPLY` appended | 5 | 0 | 2 | 0 | 0 |
+| Messages with `NO_REPLY` appended | 5 | 0 | 2 | 0 | 0 |
 | Bare `NO_REPLY` replies | 0 | 2 | 1 | 5 | 0 |
 | Redundant messages | 5 | 1 | 6 | 0 | 2 |
 | Somewhat useful messages | 0 | 0 | 4 | 1 | 0 |

@@ -6,7 +6,7 @@ own labels, not the judge's.
 
 Sources, all under results/: judged_heartbeats.csv and labels.csv for the before day (first-call tokens and
 labels), labels-production.csv and production-heartbeats.json for the after day (labels,
-first-call tokens, NO_REPLY-appended reports). The explanatory lines live in the README next to the figure, not in the image. Writes figures/heartbeat-before-after.png and .svg.
+first-call tokens, NO_REPLY-appended messages). The explanatory lines live in the README next to the figure, not in the image. Writes figures/heartbeat-before-after.png and .svg.
 Run from the repo root with any Python that has matplotlib:
     python scripts/figures/heartbeat_before_after.py
 """
@@ -54,7 +54,7 @@ def draw(numbers):
     n_before, n_after = numbers["n"]
     panels = [
         ("Context at the start of each run", numbers["tokens"], lambda v: f"{v / 1000:.0f}k tokens", None),
-        ("Reports delivered with NO_REPLY attached", numbers["leaked"], None, "of"),
+        ("Messages delivered with NO_REPLY attached", numbers["leaked"], None, "of"),
         ("Heartbeats worth hearing", numbers["worth"], None, "of"),
         ("Correct silences", numbers["silent"], None, "of"),
     ]
