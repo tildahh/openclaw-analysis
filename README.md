@@ -306,7 +306,7 @@ If each run receives the full conversation, give it a fresh session. In OpenClaw
 "heartbeat": { "isolatedSession": true }
 ```
 
-A manual chat reset had already stopped the copying. Fresh sessions kept copying low and the first prompt small (188k → 21k tokens), but they did not stop all unnecessary messages.
+Fresh sessions kept copying low and the first prompt small (188k → 21k tokens), but they did not stop all unnecessary messages.
 
 ### Scaffold: match the instructions to the delivery rule
 
