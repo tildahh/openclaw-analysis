@@ -34,8 +34,6 @@ flowchart LR
     linkStyle default stroke:#6B7280,stroke-width:1.5px
 ```
 
-Tracing comes first because every later step reads from it. Your own labels come before the judge because they are the only way to know whether its scores can be trusted.
-
 ## How the assistant works
 
 ![A hand-drawn diagram. A message or a scheduled heartbeat starts a run in the harness, drawn as the largest box. The harness builds the context, shown as three strips in which conversation history is far longer than instructions or memory, runs tools, and then either delivers the reply or sends nothing when the whole reply is NO_REPLY. Four numbered arrows carry the context to the model, a tool call back, the tool result out again, and the answer back. A dashed frame around the harness and the model is the tracing backend, which records each model call and tool call as a span.](figures/model-and-harness-v2.png)
@@ -61,7 +59,7 @@ def run_assistant(trigger):
 
 The last three lines are the delivery rule: the assistant stays quiet only when its entire reply is the `NO_REPLY` token.
 
-## See what it is doing
+## Observability
 
 A trace records one run: the context that was assembled, each model call with its token counts, each tool call with its arguments and result, and the final reply. Each step is a span. Without traces, the chat log is all you can read, and it shows the reply and nothing behind it.
 
@@ -260,14 +258,14 @@ Start with checks you can automate: reply format, repeated text, token counts, a
 
 ```mermaid
 flowchart TD
-    T(["Timer fires every 30 minutes"]) --> C["Context assembled<br/>How many earlier messages were included?"]
+    T(["Heartbeat every 30 minutes"]) --> C["Conversation context assembled"]
     C --> M["Model call<br/>How many input tokens?"]
-    M --> Q{"Tool?"}
-    Q -- yes --> TL["Tool call<br/>Did it read the calendar and reminders?"]
+    M --> Q{"Tool Call?"}
+    Q -- yes --> TL["Did it read the tool call results?"]
     TL --> M
-    Q -- no --> R{"Only NO_REPLY?"}
+    Q -- no --> R{"NO_REPLY only?"}
     R -- yes --> S["Nothing is sent"]
-    R -- no --> D["Message delivered<br/>Does it repeat the previous report?"]
+    R -- no --> D["Does it repeat a previous message?"]
     classDef default fill:#FBFBF9,stroke:#2A78D6,stroke-width:1.5px,color:#1F2328
     linkStyle default stroke:#6B7280,stroke-width:1.5px
 ```
