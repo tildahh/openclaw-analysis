@@ -175,11 +175,22 @@ I wrote an [observer plugin](observer/) that names each run, fills in its reques
 | Token counts | Aggregate usage counted as an extra model call | Per-call usage, with the aggregate kept as a diagnostic counter |
 | Recorded reasoning | Not exported | Optional, bounded and credential-redacted |
 
-Saved runs can also be re-exported offline, with each step named for what it did:
+Without the plugin, a chat request like the one below arrives as a generic root with no input or output, and every tool step has the same name:
+
+```
+openclaw.message.processed     input: (empty)   output: (empty)
+├─ openclaw.model.call
+├─ openclaw.tool.execution
+├─ openclaw.tool.execution
+├─ openclaw.model.call
+├─ openclaw.tool.execution
+├─ openclaw.tool.execution
+└─ openclaw.model.call
+```
+
+With the plugin and the offline re-export, the same kind of run is named for the task, carries the request and the answer, and names each step for what it did:
 
 [![A request with the readable export: the root is an agent span named by the task, the Input panel shows the user's question, the Output panel shows the final answer, and the child spans are numbered model and tool steps that carry the tool's name, plus recorded reasoning.](figures/trace-readable-export.png)](figures/trace-readable-export.png)
-
-*One saved run, re-exported offline: the root carries the request and the final answer.*
 
 <a id="observer-plugin"></a>
 <details>
