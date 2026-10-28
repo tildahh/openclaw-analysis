@@ -429,13 +429,6 @@ Choose tasks that use different tools, write down what a good answer needs to in
 2. Save the request, settings, answer, and tool results. Record any errors or timeouts.
 3. Check the answer against your requirements and the sources it used.
 
-Track four things:
-
-- Did it meet every requirement?
-- How many requirements did it meet?
-- Were its facts and calculations correct?
-- Did the run produce an answer, or fail before finishing?
-
 An answer can be complete and still wrong: a missing booking link makes it incomplete, and a flight duration that contradicts the search result makes it wrong. I used an AI coding assistant to review the answers against the requirements and cite evidence for each decision.
 
 ## Change one layer at a time
