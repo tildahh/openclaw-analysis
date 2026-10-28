@@ -418,10 +418,10 @@ The heartbeat checks found what went wrong in live use, where no two days are th
 
 | Area | Tasks |
 |---|---|
-| Coursework | Weekly course readings, assignment preparation, a study plan |
-| Events | Hackathon prep, conference prep, an event follow-up |
+| Coursework | Finding this week's course readings, planning for an upcoming assignment, making a study plan |
+| Events | Preparing for a hackathon, preparing for a conference, following up after an event |
 | Travel | Finding flights for a trip |
-| Model training and research | A LoRA parameter calculation, finding an agent benchmark |
+| Model training and research | Calculating LoRA parameters, finding a benchmark for AI agents |
 
 Choose tasks that use different tools, write down what a good answer needs to include before running them, and test every change on the same tasks. For each run:
 
