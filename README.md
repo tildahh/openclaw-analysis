@@ -476,7 +476,7 @@ Inspect individual runtimes to see whether a fast median hides occasional long w
 
 One DeepSeek attempt timed out after 20.11 minutes, and Muse's longest took 13.01 minutes against its 6.28-minute median.
 
-Per task, the study plan was completed only twice in 18 attempts, and only GLM and DeepSeek completed all three weekly-reading attempts. Every model completed all three flight shortlists.
+Per task, only 2/18 attempts at the study-plan task were marked complete, and only GLM and DeepSeek had all three weekly-readings attempts marked complete.
 
 A completion score does not tell you whether every detail is correct. In an earlier Muse 30B run, outside the 27 attempts above, the tool returned a 30-hour return trip, which the assistant claimed was only 22 hours. Comparing the model's input and output in the trace exposed the mistake:
 
@@ -485,16 +485,10 @@ tool result    inbound.durationSeconds: 109620   (30 h 27 m)
 final answer   "2 stops, ~22 h 27 m travel."
 ```
 
-So I had every answer reviewed for correctness as well. GPT-6 did the review, checking each material claim against the sources the assistant had saved and keeping uncertain cases separate. It was stricter than the task called for: it expected source and reference checks beyond what the assistant could access. Of 162 answers it confirmed 27, could not fully verify 45, found a contradicted claim in 87, and recorded 3 with no answer.
+So I had GPT-6 review every answer for correctness, checking each claim against the sources the assistant had saved. It was stricter than the task called for, expecting source and reference checks beyond what the assistant could access, and found a contradicted claim in 87/162 answers.
 
-![Stacked bars of each model's 27 attempts by the correctness review's verdict: confirmed correct, could not fully verify, contradicted by sources, and no answer. Muse 30B: 7, 9, 9, 2. GLM 5.3 Flash 320B: 6, 9, 12, 0. DeepSeek V4 Flash 284B: 4, 10, 12, 1. Nemotron 120B: 5, 8, 14, 0. Qwen-3.5 122B: 4, 4, 19, 0. Qwen-3.6 35B: 1, 5, 21, 0.](figures/correctness-by-model.png)
-
-*Rows are ordered by answers without a contradicted claim.*
-
-- **Muse** had the most answers confirmed correct, 7/27, though that varied from pass to pass (2, 4 and 1).
-- **DeepSeek**, with the highest completion share, still had 12 answers with a contradicted claim.
-- **Flights:** all 18 answers were marked complete, but none was confirmed correct. 17 contradicted the search results and one could not be verified.
-- **GLM and DeepSeek:** the review backed the switch. GLM had 6 answers confirmed correct against DeepSeek's 4, with 12 contradicted each, and its slowest attempt took 6.5 minutes against DeepSeek's 18 and one timeout.
+- **Flights:** all 18 answers were marked complete, but 17 contradicted the search results and none was confirmed correct.
+- **GLM and DeepSeek:** each had 12 answers with a contradicted claim, so the review didn't change the switch. GLM's slowest attempt took 6.5 minutes, against DeepSeek's 18 and one timeout.
 
 ## Use LLM judges
 
