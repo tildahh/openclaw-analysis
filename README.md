@@ -490,7 +490,7 @@ A completion score does not tell you whether every detail is correct. For one fl
 
 *From an earlier Muse 30B run with a 10-minute limit, outside the 27 attempts charted above.*
 
-So I had every answer reviewed for correctness as well. The review checked each material claim against the sources the assistant had saved, and kept uncertain cases separate. Of 162 answers it confirmed 27, could not fully verify 45, found a contradicted claim in 87, and recorded 3 with no answer.
+So I had every answer reviewed for correctness as well. GPT-6 did the review, checking each material claim against the sources the assistant had saved and keeping uncertain cases separate. It was stricter than the task called for: it expected source and reference checks beyond what the assistant could access. Of 162 answers it confirmed 27, could not fully verify 45, found a contradicted claim in 87, and recorded 3 with no answer.
 
 ![Stacked bars of each model's 27 attempts by the correctness review's verdict: confirmed correct, could not fully verify, contradicted by sources, and no answer. Muse 30B: 7, 9, 9, 2. GLM 5.3 Flash 320B: 6, 9, 12, 0. DeepSeek V4 Flash 284B: 4, 10, 12, 1. Nemotron 120B: 5, 8, 14, 0. Qwen-3.5 122B: 4, 4, 19, 0. Qwen-3.6 35B: 1, 5, 21, 0.](figures/correctness-by-model.png)
 
@@ -521,19 +521,19 @@ An experiments table shows the scores side by side, one row per model, each aver
 
 Open a scored run to read the answer next to the judge's explanation, then filter the traces for that label to find similar answers. Use those examples to decide what to change, and rerun the same tasks to see whether it helped.
 
-### Know what each judge catches
+### Know what each judge measures
 
 I compared all five with the correctness review on the 114 answers it could settle (99 for the three judges that need tool results).
 
-![Paired bars comparing five judges with the correctness review. Task completion flagged 25 of 87 wrong answers and passed 21 of 27 correct ones. Retrieval relevance flagged 0 of 82 wrong answers and passed 17 of 17 correct ones. Tool selection flagged 44 of 87 and passed 15 of 27. Faithfulness flagged 79 of 82 and passed 11 of 17. Tool response handling flagged 80 of 82 and passed 6 of 17.](figures/task-judges-vs-review.png)
+![Scatter plot of five judges: the share of contradicted answers each flagged against the share of correct answers each passed, with the ideal judge in the top-right corner. Faithfulness: 79 of 82 flagged, 11 of 17 passed. Tool response handling: 80 of 82 flagged, 6 of 17 passed. Task completion: 25 of 87 flagged, 21 of 27 passed. Tool selection: 44 of 87 flagged, 15 of 27 passed. Retrieval relevance: 0 of 82 flagged, 17 of 17 passed. The two judges that check answers against tool results sit at the right edge.](figures/task-judges-vs-review.png)
 
-*Judges ordered from most lenient to strictest by the share of contradicted answers they flagged.*
+*Contradicted and correct are the GPT-6 review's verdicts. The grey judges are built to answer other questions, so missing contradictions is expected of them.*
 
-- **Task completion** passed 62/87 answers that contradicted their sources. An answer can cover the request and still get important details wrong.
-- **Faithfulness**, the only one of the five designed to check claims against sources, caught most contradicted answers but also rejected some correct ones.
+- **Faithfulness and tool response handling** check the answer against its tool results. They flagged 79/82 and 80/82 contradicted answers, but also rejected 6/17 and 11/17 correct ones.
+- **Task completion** checks whether the assistant did what was asked, so it passed 62/87 answers with a contradicted claim. An answer can cover the request and still get important details wrong.
 - **Retrieval relevance** passed every answer it could score, so it did not separate the models.
 
-The judges score general qualities, while the review checks each claim against the saved sources, so report the one that matches the failure you care about.
+Report the judge that checks the failure you care about, and read its score as an answer to that question only.
 
 > [!IMPORTANT]
 > Before you trust a judge's number, know three things about it: what it receives, how often it agrees with you on cases you have reviewed, and in which direction it is wrong when it disagrees.
