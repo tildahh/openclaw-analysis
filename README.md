@@ -503,8 +503,6 @@ So I had every answer reviewed for correctness as well. The review checked each 
 
 ## Use LLM judges
 
-### Choose metrics and check their inputs
-
 Choose the metrics that matter for your assistant, then compare their scores with answers you have reviewed yourself. I used five built-in Phoenix evaluators with GPT-6 Sol, keeping their default instructions:
 
 - **Task completion**: Did it do what the user asked?
