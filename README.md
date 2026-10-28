@@ -414,7 +414,7 @@ The judge was more generous with the same 20 messages, rating 14 somewhat useful
 
 ## Write your own benchmark
 
-The heartbeat work showed what the assistant did wrong from day to day. To compare instructions, tools and models fairly, I needed a fixed benchmark built from the tasks I actually want my assistant to do. Mine has nine, saved as a dataset in Phoenix:
+The heartbeat checks found what went wrong in live use, where no two days are the same. To compare instructions, tools and models fairly, I needed a fixed benchmark built from the tasks I actually want my assistant to do. Mine has nine, saved as a dataset in Phoenix:
 
 | Area | Tasks |
 |---|---|
