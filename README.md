@@ -22,9 +22,9 @@ This guide is the method I used to find the causes and test fixes, with OpenClaw
 ## The loop
 
 ```mermaid
-%%{init: {"flowchart": {"htmlLabels": false}} }%%
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
 flowchart LR
-    A["Trace every run"] --> B["Run cheap checks"]
+    A["Trace every run"] --> B["Run deterministic checks"]
     B --> C["Label a sample yourself"]
     C --> D["Calibrate an LLM judge"]
     D --> E["Change one thing"]
@@ -190,7 +190,7 @@ Saved runs can also be re-exported offline, with each step named for what it did
 The plugin keeps the name it was written under, `phoenix-eval-observer`, from when it only recorded evaluation sessions. It has two parts. The **observer hooks** record each run's visible prompt, final reply, tool calls and timings to local JSONL files, with credentials redacted and system prompts, reasoning and media left out. The optional **live-export bridge** patches the installed OpenTelemetry exporter so the traces it already sends carry a readable root span, the request and reply, a session identifier and the original tool names. Nothing in the plugin changes a prompt, a tool call, the model, memory or the result, and a capture failure never blocks the run.
 
 ```mermaid
-%%{init: {"flowchart": {"htmlLabels": false}} }%%
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
 flowchart TB
     R["One run: message, heartbeat or scheduled task"]
     R --> N["Built-in OpenTelemetry exporter<br/>model and tool spans"]
@@ -256,12 +256,12 @@ In Phoenix, set the destination project with `diagnostics.otel.headers["x-projec
 
 </details>
 
-## Start with cheap checks
+## Start with deterministic checks
 
 Before labeling anything, run the checks that code can do. They need no model calls, and they found my worst bug. Each one reads a different step of a heartbeat's trace:
 
 ```mermaid
-%%{init: {"flowchart": {"htmlLabels": false}} }%%
+%%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
 flowchart TD
     T(["Heartbeat<br/>every 30 minutes"]) --> C["Context assembled"]
     C --> M["Model call<br/>How many input tokens?"]
