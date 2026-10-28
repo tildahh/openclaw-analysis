@@ -367,13 +367,13 @@ Before asking a model to grade the assistant, label what it should have done. Fo
 | **It sent a message** | `useful`, or `somewhat_useful` when buried in a long message | `redundant` |
 | **It stayed silent** | `missed` | `correct_silence` |
 
-Add `unsure` for runs where the evidence cannot support a decision, and count a crash or timeout separately from a deliberate silence. I labeled 27 heartbeats this way. The counts for each configuration are in the [appendix](#heartbeat-observation-records).
+Add `unsure` for runs where the evidence cannot support a decision, and count a crash or timeout separately from a deliberate silence. The counts for each configuration are in the [appendix](#heartbeat-observation-records).
 
 ### Check the judge against your labels
 
 Once you have labels, check whether an LLM judge produces the same ones. Compare it with a trivial judge as well, because always picking the most common label also scores well on raw agreement.
 
-I used GPT-6 Sol as the judge, with [this prompt](prompts/heartbeat-judge.md). It scored 24/27 labeled heartbeats:
+I used GPT-6 Sol as the judge, with [this prompt](prompts/heartbeat-judge.md):
 
 | Judge | Agreed with my labels |
 |---|---|
@@ -593,7 +593,7 @@ The manual `/new` reset was separate from enabling fresh sessions and had alread
 
 <br>
 
-To choose between GPT-6 Sol and GPT-6 Astra, each scored a separate set of 24 calibration cases three times: transcript excerpts and synthetic fixtures with proposed labels that had not been reviewed. Sol matched those labels on 67/72 runs and repeated the same label for 23/24 cases. Astra matched 59/72 and returned `unsure` 10 times. The proposed labels only selected the judge. The 83% agreement above comes from the 24 live heartbeats I labeled afterwards.
+To choose between GPT-6 Sol and GPT-6 Astra, each scored a separate set of 24 calibration cases three times: transcript excerpts and synthetic fixtures with proposed labels that had not been reviewed. Sol matched those labels on 67/72 runs and repeated the same label for 23/24 cases. Astra matched 59/72 and returned `unsure` 10 times. The proposed labels only selected the judge. The 83% agreement above comes from 24 of the 27 live heartbeats I labeled afterwards. The judge did not score the other 3.
 
 </details>
 
