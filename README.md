@@ -464,7 +464,7 @@ To compare models, run each on the same tasks more than once. I tested six model
 - **DeepSeek** had the highest completion share, 24/27 attempts, at about 3.8 minutes per task.
 - **GLM 5.3 Flash** completed 21/27 in about half the median time. With 27 attempts each, that gap could be chance (Fisher's exact test, p = 0.47), so speed decided my switch to GLM.
 - **Qwen-3.6** was the fastest at 1.76 minutes and had the lowest completion score, 0.59.
-- **Muse 30B** was the slowest at 6.28 minutes, despite having the fewest total parameters.
+- **Muse 30B** was the slowest at 6.28 minutes. It is dense, using all 30B parameters for every token, while Qwen-3.6 uses 3B of its 35B.
 
 <a id="runtime-distribution"></a>
 
