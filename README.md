@@ -420,7 +420,7 @@ The heartbeat checks found what went wrong in live use, where no two days are th
 |---|---|
 | Coursework | Weekly course readings, assignment preparation, a study plan |
 | Events | Hackathon prep, conference prep, an event follow-up |
-| Travel | A flight shortlist |
+| Travel | Finding flights for a trip |
 | Model training and research | A LoRA parameter calculation, finding an agent benchmark |
 
 Choose tasks that use different tools, write down what a good answer needs to include before running them, and test every change on the same tasks. For each run:
