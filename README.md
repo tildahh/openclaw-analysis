@@ -516,16 +516,16 @@ At first, tool results were cut off at 8,192 characters and some answers were sh
 
 How often each judge passed each model's answers, across three attempts at nine tasks:
 
-| Model | Task completion | Tool selection | Faithfulness | Tool response handling | Retrieval relevance |
+| Model | Task completion<br>of 27 | Tool selection<br>of 27 | Faithfulness<br>of 23–24 | Tool response handling<br>of 23–24 | Retrieval relevance<br>of 23–24 |
 |---|---|---|---|---|---|
-| DeepSeek V4 Flash 284B | 24/27 | 11/27 | 6/23 | 4/23 | 23/23 |
-| GLM 5.3 Flash 320B | 21/27 | 12/27 | 5/24 | 3/24 | 24/24 |
-| Qwen-3.5 122B | 19/27 | 19/27 | 4/24 | 3/24 | 24/24 |
-| Nemotron 120B | 18/27 | 9/27 | 1/24 | 0/24 | 24/24 |
-| Muse 30B | 17/27 | 11/27 | 4/23 | 1/23 | 23/23 |
-| Qwen-3.6 35B | 16/27 | 12/27 | 1/24 | 0/24 | 24/24 |
+| DeepSeek V4 Flash 284B | 89% | 41% | 26% | 17% | 100% |
+| GLM 5.3 Flash 320B | 78% | 44% | 21% | 12% | 100% |
+| Qwen-3.5 122B | 70% | 70% | 17% | 12% | 100% |
+| Nemotron 120B | 67% | 33% | 4% | 0% | 100% |
+| Muse 30B | 63% | 41% | 17% | 4% | 100% |
+| Qwen-3.6 35B | 59% | 44% | 4% | 0% | 100% |
 
-The last three judges need tool results, so each is out of the answers it could score.
+The last three judges need tool results, so they only score answers that had them.
 
 > [!IMPORTANT]
 > Before you trust a judge's number, know three things about it: what it receives, how often it agrees with you on cases you have reviewed, and in which direction it is wrong when it disagrees.
