@@ -476,13 +476,7 @@ Inspect individual runtimes to see whether a fast median hides occasional long w
 
 One DeepSeek attempt timed out after 20.11 minutes, and Muse's longest took 13.01 minutes against its 6.28-minute median.
 
-In the task breakdown, each cell counts how many of three attempts the judge marked complete.
-
-[![Task-by-model completion grid with nine task rows and six model columns. Each cell shows 0/3 through 3/3 attempts marked complete. Study planning has only two completions across all models. GLM and DeepSeek have 3/3 for weekly course readings; the other models have 0/3 or 1/3.](figures/task-completion-grid.png)](figures/task-completion-grid.png)
-
-*Darker cells mean more attempts marked complete. Tasks are ordered hardest first and models best first, with totals on the margins.*
-
-The study plan was completed only twice across all six models. GLM and DeepSeek were the only models to complete all three weekly-reading attempts, and every model completed all three flight shortlists.
+Per task, the study plan was completed only twice in 18 attempts, and only GLM and DeepSeek completed all three weekly-reading attempts. Every model completed all three flight shortlists.
 
 A completion score does not tell you whether every detail is correct. In an earlier Muse 30B run, outside the 27 attempts above, the tool returned a 30-hour return trip, which the assistant claimed was only 22 hours. Comparing the model's input and output in the trace exposed the mistake:
 
