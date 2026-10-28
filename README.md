@@ -12,7 +12,7 @@ This guide is the method I used to find the causes and test fixes, with OpenClaw
 |---|---|
 | Each heartbeat was re-reading the whole week's chat | A fresh session for each heartbeat cut the first prompt (188k → 21k tokens). |
 | All five baseline messages reached me by mistake | The instruction said to end with `NO_REPLY`, and OpenClaw suppresses a message only when the whole reply is exactly `NO_REPLY`. |
-| The LLM judge and I agreed on 20 of 24 heartbeats | Cohen's κ 0.73, agreement corrected for chance. Its worst miss called a missed reminder a correct silence. |
+| The LLM judge and I agreed on 20/24 heartbeats | Cohen's κ 0.73, agreement corrected for chance. Its worst miss called a missed reminder a correct silence. |
 | Choosing GLM over DeepSeek cut the time per task almost in half | **GLM 5.3 Flash:** 21/27 complete, 2.1 min per task<br>**DeepSeek:** 24/27 complete, 3.8 min per task<br>The completion gap could be chance (p = 0.47). |
 
 [![Scatter plot of six models by median task time and mean task-completion score. Qwen-3.6 35B: 1.76 minutes, 0.59; Qwen-3.5 122B: 2.73 minutes, 0.70; Nemotron 120B: 3.64 minutes, 0.67; Muse 30B: 6.28 minutes, 0.63; GLM 5.3 Flash 320B: 2.08 minutes, 0.78; DeepSeek V4 Flash 284B: 3.81 minutes, 0.89.](figures/model-completion-time.png)](figures/model-completion-time.png)
