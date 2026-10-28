@@ -523,7 +523,7 @@ Open a scored run to read the answer next to the judge's explanation, then filte
 
 ### Know what each judge catches
 
-Each judge measures something different, and its name does not say which errors it catches. I compared all five with the correctness review across the 114 answers the review could settle. Three of the judges need tool results and could score 99 of those.
+I compared all five with the correctness review on the 114 answers it could settle (99 for the three judges that need tool results).
 
 ![Paired bars comparing five judges with the correctness review. Task completion flagged 25 of 87 wrong answers and passed 21 of 27 correct ones. Retrieval relevance flagged 0 of 82 wrong answers and passed 17 of 17 correct ones. Tool selection flagged 44 of 87 and passed 15 of 27. Faithfulness flagged 79 of 82 and passed 11 of 17. Tool response handling flagged 80 of 82 and passed 6 of 17.](figures/task-judges-vs-review.png)
 
