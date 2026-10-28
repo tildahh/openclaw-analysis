@@ -2,7 +2,7 @@
 <!-- Editable source for model-and-harness-v2.png. Render it headlessly from the repo root (the tab title turns
      into "ready: no overflow" once every label fits; any other title means a label overflowed):
        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --hide-scrollbars \
-         --window-size=1200,600 --force-device-scale-factor=2 --virtual-time-budget=10000 \
+         --window-size=1200,512 --force-device-scale-factor=2 --virtual-time-budget=10000 \
          --screenshot=figures/model-and-harness-v2.png "file://$PWD/scripts/figures/model-and-harness-v2.html" -->
 <html><head><meta charset="utf-8">
 <title>The harness and the model</title>
@@ -13,9 +13,9 @@
 </style>
 <script src="https://cdn.jsdelivr.net/npm/roughjs@4.6.6/bundled/rough.js"></script>
 </head><body>
-<svg id="diagram" xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600" role="img" aria-labelledby="diagram-title diagram-description">
+<svg id="diagram" xmlns="http://www.w3.org/2000/svg" width="1200" height="512" viewBox="0 0 1200 512" role="img" aria-labelledby="diagram-title diagram-description">
   <title id="diagram-title">The harness runs the assistant; a tracing backend records every step</title>
-  <desc id="diagram-description">A message or a scheduled heartbeat starts a run in the harness. The harness builds the context, in which conversation history is by far the largest part, runs tools, and then either delivers the reply or sends nothing when the whole reply is NO_REPLY. Numbered arrows carry the context to the model, tool calls back, tool results out again, and the answer back. A dashed frame around the harness and the model is the tracing backend, which records each model call and tool call as a span.</desc>
+  <desc id="diagram-description">A message or a scheduled heartbeat starts a run in the harness. The harness builds the context, in which conversation history is by far the largest part, and runs tools. Numbered arrows carry the context to the model, tool calls back, tool results out again, and the answer back, and the harness delivers the reply. A dashed frame around the harness and the model is the tracing backend, which records each model call and tool call as a span.</desc>
 </svg>
 <script>
 // Colour roles match scripts/figures/palette.py: blue for what you change (the harness), ink outline for what you swap
@@ -68,12 +68,12 @@ function drawArrow(x1, y1, x2, y2, color, dashed = false) {
     x2 - 11 * Math.cos(angle + offset), y2 - 11 * Math.sin(angle + offset), color);
 }
 
-/** Draw the triggers, the harness with its three jobs, the numbered loop with the model, and the tracing frame. */
+/** Draw the triggers, the harness with its two jobs, the numbered loop with the model, and the tracing frame. */
 function drawDiagram() {
   // Tracing frame: the recorder sees everything inside it, and nothing about the person outside it.
-  drawCard(360, 76, 772, 484, MUTED, "none", true, 1.5);
-  addText(384, 540, "Tracing backend", 26, MUTED, true);
-  addText(600, 538, "records each model call and tool call as a span", 17, MUTED);
+  drawCard(360, 76, 772, 396, MUTED, "none", true, 1.5);
+  addText(384, 452, "Tracing backend", 26, MUTED, true);
+  addText(600, 450, "records each model call and tool call as a span", 17, MUTED);
 
   // Triggers, outside the frame.
   drawCard(32, 118, 218, 108, MUTED, TRIGGER_FILL);
@@ -95,7 +95,7 @@ function drawDiagram() {
   addText(314, 341, "starts a run", 15, MUTED, false, "middle");
 
   // The harness: the part you can change.
-  drawCard(380, 100, 420, 400, BLUE, HARNESS_FILL);
+  drawCard(380, 100, 420, 312, BLUE, HARNESS_FILL);
   addText(404, 141, "The harness", 34, INK, true);
   addText(776, 139, "OpenClaw", 17, MUTED, false, "end");
 
@@ -112,11 +112,6 @@ function drawDiagram() {
   drawCard(404, 312, 372, 76, CARD_STROKE, "#ffffff");
   addText(426, 344, "Runs tools", 26, INK, true);
   addText(426, 372, "Files · calendar · reminders · web", 17, MUTED, false, "start", 330);
-
-  drawCard(404, 400, 372, 86, CARD_STROKE, "#ffffff");
-  addText(426, 430, "Delivers or stays silent", 24, INK, true, "start", 330);
-  addText(426, 455, "whole reply is NO_REPLY  →  nothing is sent", 14, MUTED, false, "start", 330);
-  addText(426, 476, "anything else  →  sent to you", 14, BLUE, false, "start", 330, "600");
 
   // The model: the part you swap.
   drawCard(900, 160, 190, 230, INK, "#ffffff");
@@ -136,7 +131,7 @@ function drawDiagram() {
   const overflow = [];
   for (const node of svg.querySelectorAll("text")) {
     const bounds = node.getBBox();
-    if (bounds.x < 8 || bounds.y < 8 || bounds.x + bounds.width > 1192 || bounds.y + bounds.height > 592 ||
+    if (bounds.x < 8 || bounds.y < 8 || bounds.x + bounds.width > 1192 || bounds.y + bounds.height > 504 ||
         (node.dataset.maxWidth && bounds.width > Number(node.dataset.maxWidth))) overflow.push(node.textContent);
   }
   document.title = overflow.length ? "OVERFLOW: " + overflow.join(" | ") : "ready: no overflow";
