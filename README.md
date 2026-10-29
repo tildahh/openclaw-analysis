@@ -45,7 +45,7 @@ An agent is a model plus the harness that runs it. Following [Hugging Face's age
 | Layer | What it is | In my assistant | What I changed |
 |---|---|---|---|
 | Model | The LLM: text in, text out, with no loop or memory of its own | Qwen-3.5 122B | Switched to GLM 5.3 Flash |
-| Scaffold | Shapes behavior: instructions, tool descriptions, how the reply is parsed | Heartbeat instructions, tool descriptions, the `NO_REPLY` rule | Rewrote the heartbeat prompt, added 12 MCP tools and a final-answer check |
+| Scaffold | Shapes behavior: instructions, tool descriptions, how the reply is parsed | Heartbeat instructions, tool descriptions, the `NO_REPLY` rule | Rewrote the heartbeat prompt and added 12 MCP tools |
 | Harness | Runs the loop: calls the model, runs its tool calls, decides when to stop | OpenClaw, which also decides what history and memory go into the context | A fresh session for each heartbeat |
 
 ```python
@@ -170,9 +170,9 @@ I wrote an [observer plugin](observer/) that names each run, fills in its reques
 |---|---|---|
 | ① Root span name | `openclaw.harness.run` or `openclaw.message.processed` | Heartbeat, Conversation, Scheduled task or Evaluation |
 | ② `input.value` and `output.value` | Missing | The request and the final reply |
-| ③ Tool names | Every tool span is named `openclaw.tool.execution`, with the tool's name only in its attributes | In the readable export, each step is named for the tool that ran, such as `read` or `apple_calendar_events` |
-| ④ Token counts | Aggregate usage counted as an extra model call | Per-call usage, with the aggregate kept as a diagnostic counter |
-| ⑤ Recorded reasoning | Not exported | Optional, bounded and credential-redacted |
+| ③ Token counts | Aggregate usage counted as an extra model call | Per-call usage, with the aggregate kept as a diagnostic counter |
+| ④ Recorded reasoning | Not exported | Optional, bounded and credential-redacted |
+| Tool span names | `openclaw.tool.execution`, with the tool's name in the span's details | Unchanged<br>The offline [`export_trace.py`](scripts/export_trace.py) names each step for its tool, such as `Tool · read` |
 | `session.id` | Missing | One identifier per conversation, so its turns group together |
 
 Two runs in Phoenix's trace list, a heartbeat and a question about this week's readings (numbers match the table):
@@ -180,22 +180,22 @@ Two runs in Phoenix's trace list, a heartbeat and a question about this week's r
 <table>
   <tr><th>Default export</th></tr>
   <tr><td><img src="figures/trace-list-default.png" width="100%" alt="Phoenix trace list for the default export: two runs of kind unknown, named openclaw.harness.run and openclaw.message.processed, with no input or output. Outline 1 marks the name column and outline 2 the input and output columns."></td></tr>
-  <tr><th>Readable export</th></tr>
-  <tr><td><img src="figures/trace-list-readable.png" width="72%" alt="The same two runs in the readable export: both of kind agent, named Heartbeat and Conversation, each showing its request and the start of its reply. Outlines 1 and 2 mark the same columns."></td></tr>
+  <tr><th>With the plugin</th></tr>
+  <tr><td><img src="figures/trace-list-readable.png" width="72%" alt="The same two runs with the plugin: both of kind agent, named Heartbeat and Conversation, each showing its request and the start of its reply. Outlines 1 and 2 mark the same columns."></td></tr>
 </table>
 
-*The readable export is the plugin's record of each run, re-exported offline.*
+*The plugin views are its records of these runs, re-exported offline with the names the live plugin writes.*
 
-Inside the readings run, the default export already records each tool call's parameters and result, but every step in the tree is named `openclaw.model.call` or `openclaw.tool.execution`, so you have to open each one to follow the run. The readable export numbers the steps and names each for what it did, with the recorded reasoning under each model call:
+Inside the readings run, both views name every step `openclaw.model.call` or `openclaw.tool.execution` and record each tool call's parameters and result, so you open a step to see which tool ran. The plugin names the run, stops counting its tokens twice and adds the recorded reasoning under each model call:
 
 <table>
   <tr>
     <th width="50%">Default export</th>
-    <th width="50%">Readable export</th>
+    <th width="50%">With the plugin</th>
   </tr>
   <tr>
-    <td><img src="figures/trace-tree-default.png" width="100%" alt="The first steps of the readings run in the default export: a root named openclaw.message.processed, an extra openclaw.model.usage span holding the run's total of 174,107 tokens, then alternating openclaw.model.call and openclaw.tool.execution spans. Outline 4 marks the openclaw.model.usage span and outline 3 the highlighted 131 ms calendar lookup."></td>
-    <td><img src="figures/trace-tree-readable.png" width="100%" alt="The same steps in the readable export: a root named Coursework · This week's readings, then numbered steps such as 01. Model · choose next step, 02. Tool · read and 03. Tool · apple_calendar_events, with recorded reasoning under each model call. Outline 3 marks the same calendar lookup, highlighted, and outline 5 the first recorded reasoning."></td>
+    <td><img src="figures/trace-tree-default.png" width="312" alt="The first steps of the readings run in the default export: a root named openclaw.message.processed, wrapper spans, an extra openclaw.model.usage span holding the run's total of 174,107 tokens, then openclaw.model.call and openclaw.tool.execution steps with the 131 ms calendar lookup highlighted. Outline 3 marks the openclaw.model.usage span."></td>
+    <td><img src="figures/trace-tree-readable.png" width="312" alt="The same steps with the plugin: a root named Conversation, then openclaw.model.call and openclaw.tool.execution steps with recorded reasoning under each model call and the same calendar lookup highlighted. Outline 4 marks the first recorded reasoning."></td>
   </tr>
 </table>
 
@@ -207,7 +207,7 @@ Inside the readings run, the default export already records each tool call's par
 
 <br>
 
-The plugin keeps the name it was written under, `phoenix-eval-observer`, from when it only recorded evaluation sessions. It has two parts. The **observer hooks** record each run's visible prompt, final reply, tool calls and timings to local JSONL files, with credentials redacted and system prompts, reasoning and media left out. The optional **live-export bridge** patches the installed OpenTelemetry exporter so the traces it already sends carry a readable root span, the request and reply, a session identifier and the original tool names. Nothing in the plugin changes a prompt, a tool call, the model, memory or the result, and a capture failure never blocks the run.
+The plugin keeps the name it was written under, `phoenix-eval-observer`, from when it only recorded evaluation sessions. It has two parts. The **observer hooks** record each run's visible prompt, final reply, tool calls and timings to local JSONL files, with credentials redacted and system prompts, reasoning and media left out. The optional **live-export bridge** patches the installed OpenTelemetry exporter so the traces it already sends carry a readable root span, the request and reply, a session identifier and the tool names in each model call's messages. Nothing in the plugin changes a prompt, a tool call, the model, memory or the result, and a capture failure never blocks the run.
 
 ```mermaid
 %%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
@@ -478,7 +478,7 @@ The same answers score 59–89% on task completion but 4–26% on faithfulness, 
 
 Make a change that addresses a problem you found, then rerun the whole benchmark, including the tasks that already worked.
 
-My assistant often misread information it had already found, so I added this instruction:
+My assistant often misread information it had already found, so I tested this instruction:
 
 > "Before giving a final answer, check that it fulfills the user's request and that its decision-critical claims agree with the evidence you retrieved."
 
