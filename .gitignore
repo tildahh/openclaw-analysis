@@ -22,21 +22,14 @@
 
 !/figures/
 /figures/*
-!/figures/correctness-by-model.png
-!/figures/flight-source-versus-answer.png
 !/figures/heartbeat-after-no-reply-output.png
 !/figures/heartbeat-before-no-reply-excerpt.png
 !/figures/heartbeat-context-counts-highlighted.png
 !/figures/model-and-harness-v2.png
 !/figures/model-completion-time.png
-!/figures/phoenix-models-dashboard.png
-!/figures/phoenix-models-judge-scores.png
 !/figures/runtime-distribution.png
-!/figures/task-completion-grid.png
-!/figures/task-judges-vs-review.png
 !/figures/trace-readable-export.png
 !/figures/heartbeat-before-after.png
-!/figures/phoenix-sessions-list.png
 
 __pycache__/
 .DS_Store

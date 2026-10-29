@@ -2,7 +2,7 @@
 
 *A practical guide to evaluating an agent that acts on a schedule.*
 
-I run [OpenClaw](https://github.com/openclaw/openclaw), an open-source personal assistant, on my own hardware with a locally hosted model. Every 30 minutes a scheduled check, called a heartbeat, wakes it to decide whether anything needs my attention. It kept repeating old information or burying useful updates in long messages. Other users have run into the same delivery rule: in one [GitHub issue](https://github.com/openclaw/openclaw/issues/142588), 26/27 scheduled checks sent messages about what the assistant planned to do, without a result.
+I run [OpenClaw](https://github.com/openclaw/openclaw), an open-source personal assistant, on my own hardware with a locally hosted model. Every 30 minutes a scheduled check, called a heartbeat, wakes it to decide whether anything needs my attention. It kept repeating old information or burying useful updates in long messages. Other users have hit the same delivery rule, where only an exact silence keyword keeps a reply from being sent: in one [GitHub issue](https://github.com/openclaw/openclaw/issues/142588), 26/27 scheduled checks sent messages about what the assistant planned to do, without a result.
 
 This guide is the method I used to find the causes and test fixes, with OpenClaw and [Phoenix](https://github.com/Arize-ai/phoenix), an open-source tracing and evaluation tool. The steps apply to any agent that calls tools on a schedule, and the traces are standard [OpenTelemetry](https://opentelemetry.io/), so other tracing backends can read them too.
 
@@ -38,7 +38,7 @@ flowchart LR
 
 ![A hand-drawn diagram. A message or a scheduled heartbeat starts a run in the harness, drawn as the largest box. The harness builds the context, shown as three strips in which conversation history is far longer than instructions or memory, and runs tools. Four numbered arrows carry the context to the model, a tool call back, the tool result out again, and the answer back, and the harness delivers the reply to you. A dashed frame around the harness and the model is the tracing backend, which records each model call and tool call as a span.](figures/model-and-harness-v2.png)
 
-*Blue is the harness and scaffold, the parts I changed. The outlined box is the model, which I compared.*
+*Blue is the harness and scaffold, the parts I changed. The black-outlined box is the model, which I compared.*
 
 An agent is a model plus the harness that runs it. Following [Hugging Face's agent glossary](https://huggingface.co/blog/agent-glossary), this guide also separates out the scaffold, the part that shapes the model's behavior, so each change can be tested one layer at a time.
 
@@ -175,7 +175,7 @@ I wrote an [observer plugin](observer/) that names each run, fills in its reques
 | Token counts | Aggregate usage counted as an extra model call | Per-call usage, with the aggregate kept as a diagnostic counter |
 | Recorded reasoning | Not exported | Optional, bounded and credential-redacted |
 
-Without the plugin, a chat request like the one below arrives as a generic root with no input or output, and every tool step has the same name:
+Without the plugin, the request in the screenshot below arrives as a generic root with no input or output, and every tool step has the same name:
 
 ```
 openclaw.message.processed     input: (empty)   output: (empty)
@@ -252,7 +252,7 @@ In Phoenix, set the destination project with `diagnostics.otel.headers["x-projec
 3. Build the patched exporter with `observer/patch-native-exporter.py`, passing the exact upstream source file, an output path and the installed observer directory.
 4. At an idle moment, copy the observer files and the patched exporter into place and merge the configuration entry above.
 5. Restart the gateway and check plugin and gateway health. Hot reload left a stale plugin reference on my version, so restart cleanly.
-6. Send two ordinary messages and confirm they share one session ID but have separate trace IDs, then open a trace and check the request, reply, tool and reasoning panels.
+6. Send two ordinary messages and confirm they share one session ID but have separate trace IDs, then open a trace and check the request, reply and tool panels, and the reasoning panel if you set `captureReasoning` to `text`.
 
 **Rollback.** At an idle moment, restore the backed-up exporter file and observer directory, restore the plugin's configuration entry, restart and check health. Avoid restoring the whole configuration file over unrelated changes made since.
 
@@ -324,9 +324,8 @@ Fresh sessions kept copying low and the first prompt small (188k → 21k tokens)
 If the assistant says "nothing changed" but still sends a message, check its instructions against the delivery rule. OpenClaw sends nothing only when the entire reply is `NO_REPLY`. Make that explicit:
 
 ```diff
-- For no meaningful change, end with exactly `NO_REPLY`.
-+ For no meaningful change, reply with exactly `NO_REPLY` and nothing else.
-+ NO_REPLY means no message reaches the user; anything else you write is delivered.
+- For no meaningful change, end with exactly NO_REPLY.
++ If nothing needs attention, the entire reply is exactly NO_REPLY: nothing before it and nothing after it.
 ```
 
 My old instruction allowed any text before `NO_REPLY`, so I received the whole message every time:
@@ -354,7 +353,7 @@ Each change fixed one problem and exposed the next:
 
 | Change | Fixed | Exposed |
 |---|---|---|
-| Chat reset, then fresh sessions | Copied messages | Messages still sent with `NO_REPLY` at the end |
+| Fresh sessions | Copied messages | Messages still sent with `NO_REPLY` at the end |
 | Silence rule, with a prompt rewrite | Messages with `NO_REPLY` attached | Two silences while an urgent reminder was due |
 | Calendar and reminders check before silence | Missed reminders | A reminder sent again after it had already gone out |
 
@@ -417,9 +416,9 @@ I labeled 23 heartbeats the following day:
 - 9 sent a message worth hearing, and 3 stayed correctly silent.
 - 11 still sent a message I did not need.
 
-![Four before-and-after comparisons. Context at the start of each run: 188k tokens before, 27k after. Messages delivered with NO_REPLY attached: 5 of 5 before, 0 of 23 after. Heartbeats worth hearing: 0 of 5 before, 9 of 23 after. Correct silences: 0 of 5 before, 3 of 23 after.](figures/heartbeat-before-after.png)
+![Four before-and-after comparisons. Context at the start of each run: 188k tokens before, 27k after. Messages delivered with NO_REPLY attached: 5 of 5 before, 0 of 20 after. Heartbeats worth hearing: 0 of 5 before, 9 of 23 after. Correct silences: 0 of 5 before, 3 of 23 after.](figures/heartbeat-before-after.png)
 
-*Before: the first five heartbeats, each carrying the whole week's chat. After: the next day's 23, with fresh sessions, the rewritten silence rule, source checks and 12 added tools, whose definitions raised the first prompt (21k → 27k tokens). Worth hearing and correct silences are my labels, and the assistant ran Qwen-3.5 122B throughout.*
+*Before: the first five heartbeats, each carrying the whole week's chat. After: 23 heartbeats on the day after the changes, with fresh sessions, the rewritten silence rule, source checks and 12 added tools, whose definitions raised the first prompt (21k → 27k tokens). Worth hearing and correct silences are my labels, and the assistant ran Qwen-3.5 122B throughout.*
 
 The judge was more generous with the same 20 messages, rating 14 somewhat useful and 6 redundant, and agreed on the silences.
 
@@ -436,7 +435,7 @@ The heartbeat checks found what went wrong in live use, where no two days are th
 
 Choose tasks that use different tools, and write down what a good answer needs to include before running them. Test every change on the same tasks, and start each run in a fresh session with earlier answers and drafts removed, so one run can't borrow from another.
 
-An answer can be complete and still wrong: a missing booking link makes it incomplete, and a flight duration that contradicts the search result makes it wrong. I used an AI coding assistant to review the answers against the requirements and cite evidence for each decision.
+A flight answer can meet every requirement and still get the flight time wrong, so check completeness and correctness separately. A coding assistant running GPT-6 Sol checked each requirement and cited evidence for each decision.
 
 ## Change one layer at a time
 
@@ -470,8 +469,8 @@ To compare models, run each on the same tasks more than once. I tested six model
 
 - **DeepSeek** had the highest completion share, 24/27 attempts, at about 3.8 minutes per task.
 - **GLM 5.3 Flash** completed 21/27 in about half the median time. With 27 attempts each, that gap could be chance (Fisher's exact test, p = 0.47), so speed decided my switch to GLM.
-- **Qwen-3.6** was the fastest at 1.76 minutes and had the lowest completion score, 0.59.
-- **Muse 30B** was the slowest at 6.28 minutes. It is dense, using all 30B parameters for every token, while Qwen-3.6 uses 3B of its 35B.
+- **Qwen-3.6** was the fastest at 1.76 minutes and had the lowest completion share, 16/27.
+- **Muse 30B** was the slowest at 6.28 minutes. It is dense, using all 30B parameters for every token, while Qwen-3.6 uses 3B of its 35B, though hardware also differed.
 
 <a id="runtime-distribution"></a>
 
@@ -490,7 +489,7 @@ tool result    inbound.durationSeconds: 109620   (30 h 27 m)
 final answer   "2 stops, ~22 h 27 m travel."
 ```
 
-So I had GPT-6 review every answer for correctness, checking each claim against the sources the assistant had saved. It was stricter than the task called for, expecting source and reference checks beyond what the assistant could access, and found a contradicted claim in 87/162 answers.
+So I had GPT-6 Sol review every answer for correctness, checking each claim against the sources the assistant had saved. It was stricter than the task called for, expecting source and reference checks beyond what the assistant could access, and found a contradicted claim in 87/159 answers.
 
 - **Flights:** all 18 answers were marked complete, but 17 contradicted the search results and none was confirmed correct.
 - **GLM and DeepSeek:** each had 12 answers with a contradicted claim, so the review didn't change the switch. GLM's slowest attempt took 6.5 minutes, against DeepSeek's 18 and one timeout.
@@ -505,7 +504,7 @@ Choose the metrics that tell you which part of the system needs improvement. I u
 - **Retrieval relevance**: Did the chosen tools return relevant information?
 - **Tool response handling**: Did it use that information correctly?
 
-At first, tool results were cut off at 8,192 characters and some answers were shortened. I rebuilt the inputs to include AGENTS.md, the assistant's full answers and the full tool results.
+At first, tool results were cut off at 8,192 characters and some answers were shortened. I rebuilt the inputs to include AGENTS.md (the assistant's instructions file), its full answers and tool results of up to 150,000 characters.
 
 How often each judge passed each model's answers, across three attempts at nine tasks:
 
@@ -518,7 +517,7 @@ How often each judge passed each model's answers, across three attempts at nine 
 | Muse 30B | 63% | 41% | 17% | 4% | 100% |
 | Qwen-3.6 35B | 59% | 44% | 4% | 0% | 100% |
 
-The last three judges need tool results, so they only score answers that had them.
+Faithfulness, tool response handling and retrieval relevance need tool results, so they only score answers that had them.
 
 > [!IMPORTANT]
 > Before you trust a judge's number, know three things about it: what it receives, how often it agrees with you on cases you have reviewed, and in which direction it is wrong when it disagrees.
@@ -597,7 +596,7 @@ Live flight, calendar and web results could change between trials. Workspaces an
 
 <a id="runtime-distribution-methodology"></a>
 
-**Runtime distribution.** The [runtime figure](#runtime-distribution) uses the same 27 attempts per model as the scatter plot and the completion grid, with one replacement run standing in for a failed setup. The timeout remains in the median. Vertical spacing separates nearby points. Times exclude setup; hardware and serving settings differed.
+**Runtime distribution.** The [runtime figure](#runtime-distribution) uses the same 27 attempts per model as the scatter plot, with one replacement run standing in for a failed setup. The timeout remains in the median. Vertical spacing separates nearby points. Times exclude setup; hardware and serving settings differed.
 
 </details>
 
@@ -611,7 +610,7 @@ The results describe each model together with its serving setup. Most runs used 
 - **Variation across passes.** Muse had 2, 4 and 1 confirmed-correct answers across its passes, and GLM had 1, 3 and 2.
 - **Time spent generating text.** GLM generated about 98 characters per second, DeepSeek 147 and Muse 34. Muse model calls took about 35 seconds against GLM's 10, and tasks took 6.3 against 2.1 minutes. Most task time was in model calls, with tools taking seconds.
 - **Model architecture.** Muse is dense, using all 30B parameters for each token. Qwen-3.6 has 35B total parameters and uses 3B per token. Hardware and serving differences prevent attributing the timing gap to architecture alone.
-- **Invalid tool calls.** Muse produced garbled calls in 7/27 tasks and repaired 12/19 rejected calls on the next turn. Another 12 calls ran with an argument dropped, including a 60-day calendar request reduced to today. Twice, tool-call markup was delivered as the answer. Qwen-3.6 had one rejected call and repaired it; the other models had none.
+- **Invalid tool calls.** Muse produced garbled calls in 7/27 attempts and repaired 12/19 rejected calls on the next turn. Another 12 calls ran with an argument dropped, including a 60-day calendar request reduced to today. Twice, tool-call markup was delivered as the answer. Qwen-3.6 had one rejected call and repaired it; the other models had none.
 - **Concurrent tool calls.** DeepSeek and Qwen-3.6 sent several calls together in 70–80% of their tool turns. Nemotron called tools sequentially.
 - **Weekday calculations.** Five models sometimes used weekdays from the previous year's calendar. Qwen-3.6 got 32/33 weekdays wrong across its study plans, GLM got 10/41 wrong, and DeepSeek got 25/25 right.
 - **Links absent from retrieved evidence.** Of Nemotron's links, 2/29 were absent from its sources, and 4/34 in its earlier 10-minute passes, including a malformed paper link. Other models used retrieved links or built them from retrieved identifiers.
@@ -628,7 +627,7 @@ The results describe each model together with its serving setup. Most runs used 
 
 The repaired judge inputs use the trial's AGENTS.md, the captured request and the model-visible tool results. They are still partial records. The full system prompt was not captured. The input builder keeps limits of 20,000 characters for request context, 150,000 per tool result and 400,000 for combined context. A statement absent from that packet is not automatically false.
 
-The judge table's counts come from the Phoenix dashboard, which gives a zero to every answer a judge could not score. The table leaves those zeros out for the three judges that need tool results. Token estimates are kept separate from directly reported usage.
+The judge table's percentages come from the Phoenix dashboard, which gives a zero to every answer a judge could not score. The table leaves those zeros out for the three judges that need tool results. Token estimates are kept separate from directly reported usage.
 
 </details>
 
