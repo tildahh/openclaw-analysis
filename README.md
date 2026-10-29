@@ -184,7 +184,7 @@ Here are a heartbeat and a conversation in Phoenix's trace list, without and wit
   <tr><td><img src="figures/trace-list-readable.png" width="72%" alt="The same two runs with the plugin: both of kind agent, named Heartbeat and Conversation, each showing its request and the start of its reply. Outlines 1 and 2 mark the same columns."></td></tr>
 </table>
 
-Inside the conversation, every step is still `openclaw.model.call` or `openclaw.tool.execution`, so you open a step to see which tool ran and what it returned. What changes is that the run's tokens are no longer counted twice, and each model call shows its recorded reasoning:
+Inside the conversation, the plugin stops counting the run's tokens twice and shows the recorded reasoning under each model call:
 
 <table>
   <tr>
