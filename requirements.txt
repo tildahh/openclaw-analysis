@@ -5,5 +5,5 @@ arize-phoenix-otel>=0.17
 openai>=1.0
 opentelemetry-proto>=1.30
 protobuf>=5
-# The figure scripts in figures/ draw the charts with matplotlib.
+# The figure scripts in scripts/figures/ draw the charts with matplotlib.
 matplotlib>=3.8

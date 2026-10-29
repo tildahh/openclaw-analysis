@@ -28,6 +28,7 @@ SIZE = 11.5
 FONTS = {"font.family": "sans-serif",
          "font.sans-serif": ["Helvetica Neue", "Helvetica", "Arial", "Liberation Sans", "DejaVu Sans"]}
 WORTH = {"useful", "somewhat_useful"}
+MESSAGE = WORTH | {"redundant"}  # labels for heartbeats that sent a message
 
 
 def load_numbers():
@@ -44,6 +45,7 @@ def load_numbers():
         "tokens": (statistics.median(float(r["tokens_first_call"]) for r in before), after["median_first_call_input_tokens"]),
         "leaked": (sum(bool(r["report_plus_no_reply"]) for r in after["baseline"]), after["report_plus_no_reply"]),
         "worth": (sum(d in WORTH for d in before_decisions), sum(d in WORTH for d in after_decisions)),
+        "messages": (sum(d in MESSAGE for d in before_decisions), sum(d in MESSAGE for d in after_decisions)),
         "silent": (before_decisions.count("correct_silence"), after_decisions.count("correct_silence")),
     }
 
@@ -54,18 +56,19 @@ def draw(numbers):
     n_before, n_after = numbers["n"]
     panels = [
         ("Context at the start of each run", numbers["tokens"], lambda v: f"{v / 1000:.0f}k tokens", None),
-        ("Messages delivered with NO_REPLY attached", numbers["leaked"], None, "of"),
-        ("Heartbeats worth hearing", numbers["worth"], None, "of"),
-        ("Correct silences", numbers["silent"], None, "of"),
+        ("Messages delivered with NO_REPLY attached", numbers["leaked"], None, numbers["messages"]),
+        ("Heartbeats worth hearing", numbers["worth"], None, numbers["n"]),
+        ("Correct silences", numbers["silent"], None, numbers["n"]),
     ]
     fig, axes = plt.subplots(2, 2, figsize=(WIDTH, 4.9), dpi=DPI, facecolor=BG)
     axes = axes.ravel()
     fig.subplots_adjust(left=0.085, right=RIGHT, top=plot_top(fig, legend=True), bottom=plot_bottom(fig, xlabel=False), hspace=0.62, wspace=0.26)
-    for i, (ax, (title, (b, a), fmt, _)) in enumerate(zip(axes, panels)):
+    for i, (ax, (title, (b, a), fmt, totals)) in enumerate(zip(axes, panels)):
         ax.set_facecolor(BG)
-        if fmt is None:  # counts become shares of that day's heartbeats, labelled as "n of N"
-            vals = [b / n_before, a / n_after]
-            texts = [f"{b} of {n_before}", f"{a} of {n_after}"]
+        if fmt is None:  # counts become shares of the panel's totals, labelled as "n/N"
+            n_b, n_a = totals
+            vals = [b / n_b, a / n_a]
+            texts = [f"{b}/{n_b}", f"{a}/{n_a}"]
             limit = 1.0
         else:
             vals = [b, a]
