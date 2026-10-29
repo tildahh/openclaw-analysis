@@ -175,7 +175,7 @@ I wrote an [observer plugin](observer/) that names each run, fills in its reques
 | Tool span names | `openclaw.tool.execution`, with the tool's name in the span's details | Unchanged<br>The offline [`export_trace.py`](scripts/export_trace.py) names each step for its tool, such as `Tool · read` |
 | `session.id` | Missing | One identifier per conversation, so its turns group together |
 
-Two runs in Phoenix's trace list, a heartbeat and a question about this week's readings (numbers match the table):
+Here are a heartbeat and a conversation in Phoenix's trace list, without and with the plugin. The numbers match the table above:
 
 <table>
   <tr><th>Default export</th></tr>
@@ -184,9 +184,7 @@ Two runs in Phoenix's trace list, a heartbeat and a question about this week's r
   <tr><td><img src="figures/trace-list-readable.png" width="72%" alt="The same two runs with the plugin: both of kind agent, named Heartbeat and Conversation, each showing its request and the start of its reply. Outlines 1 and 2 mark the same columns."></td></tr>
 </table>
 
-*The plugin views are its records of these runs, re-exported offline with the names the live plugin writes.*
-
-Inside the readings run, both views name every step `openclaw.model.call` or `openclaw.tool.execution` and record each tool call's parameters and result, so you open a step to see which tool ran. The plugin names the run, stops counting its tokens twice and adds the recorded reasoning under each model call:
+Inside the conversation, every step is still `openclaw.model.call` or `openclaw.tool.execution`, so you open a step to see which tool ran and what it returned. What changes is that the run's tokens are no longer counted twice, and each model call shows its recorded reasoning:
 
 <table>
   <tr>
@@ -194,12 +192,12 @@ Inside the readings run, both views name every step `openclaw.model.call` or `op
     <th width="50%">With the plugin</th>
   </tr>
   <tr>
-    <td><img src="figures/trace-tree-default.png" width="312" alt="The first steps of the readings run in the default export: a root named openclaw.message.processed, wrapper spans, an extra openclaw.model.usage span holding the run's total of 174,107 tokens, then openclaw.model.call and openclaw.tool.execution steps with the 131 ms calendar lookup highlighted. Outline 3 marks the openclaw.model.usage span."></td>
+    <td><img src="figures/trace-tree-default.png" width="312" alt="The first steps of the conversation in the default export: a root named openclaw.message.processed, wrapper spans, an extra openclaw.model.usage span holding the run's total of 174,107 tokens, then openclaw.model.call and openclaw.tool.execution steps with the 131 ms calendar lookup highlighted. Outline 3 marks the openclaw.model.usage span."></td>
     <td><img src="figures/trace-tree-readable.png" width="312" alt="The same steps with the plugin: a root named Conversation, then openclaw.model.call and openclaw.tool.execution steps with recorded reasoning under each model call and the same calendar lookup highlighted. Outline 4 marks the first recorded reasoning."></td>
   </tr>
 </table>
 
-*The highlighted row is the same 131 ms calendar lookup in both.*
+*The highlighted step is the same calendar lookup in both.*
 
 <a id="observer-plugin"></a>
 <details>
