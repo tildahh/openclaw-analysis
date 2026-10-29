@@ -45,7 +45,7 @@ An agent is a model plus the harness that runs it. Following [Hugging Face's age
 | Layer | What it is | In my assistant | What I changed |
 |---|---|---|---|
 | Model | The LLM: text in, text out, with no loop or memory of its own | Qwen-3.5 122B | Switched to GLM 5.3 Flash |
-| Scaffold | Shapes behavior: instructions, tool descriptions, how the reply is parsed | Heartbeat instructions, tool descriptions, the `NO_REPLY` rule | Silence rule, source checks, 12 MCP tools, final-answer check |
+| Scaffold | Shapes behavior: instructions, tool descriptions, how the reply is parsed | Heartbeat instructions, tool descriptions, the `NO_REPLY` rule | Rewrote the heartbeat prompt, added 12 MCP tools and a final-answer check |
 | Harness | Runs the loop: calls the model, runs its tool calls, decides when to stop | OpenClaw, which also decides what history and memory go into the context | A fresh session for each heartbeat |
 
 ```python
@@ -396,14 +396,14 @@ My old instruction allowed any text before `NO_REPLY`, so I received the whole m
 
 ### Scaffold: require current sources
 
-After the silence-rule change, which went in with a broader prompt rewrite, the assistant stayed quiet more often. But two consecutive runs stayed silent while an urgent reminder was due, and the first made no tool calls at all. So I required a calendar and reminders check before any silence.
+After the prompt rewrite, the assistant stayed quiet more often. But two consecutive runs stayed silent while an urgent reminder was due, and the first made no tool calls at all. So I required a calendar and reminders check before any silence.
 
 Each change fixed one problem and exposed the next:
 
 | Change | Fixed | Exposed |
 |---|---|---|
 | Fresh sessions | Copied messages | Messages still sent with `NO_REPLY` at the end |
-| Silence rule, with a prompt rewrite | Messages with `NO_REPLY` attached | Two silences while an urgent reminder was due |
+| Rewritten heartbeat prompt | Messages with `NO_REPLY` attached | Two silences while an urgent reminder was due |
 | Calendar and reminders check before silence | Missed reminders | A reminder sent again after it had already gone out |
 
 The changes overlapped, so none was tested on its own. The counts for every phase are in the [appendix](#heartbeat-observation-records).
@@ -416,7 +416,7 @@ I labeled 23 heartbeats the following day. All 23 checked the calendar and remin
 
 ![Each heartbeat drawn as a square and coloured by my label. Before: 5 heartbeats, all unnecessary messages. After: 23 heartbeats, with 9 messages worth hearing, 3 correct silences and 11 unnecessary messages. No heartbeat on either day missed a reminder.](figures/heartbeat-before-after.png)
 
-*Before: the first five heartbeats, each carrying the whole week's chat. After: 23 heartbeats on the day after the changes, with fresh sessions, the rewritten silence rule, source checks and 12 added tools. The labels are mine, and the assistant ran Qwen-3.5 122B throughout.*
+*Before: the first five heartbeats, each carrying the whole week's chat. After: 23 heartbeats on the day after the changes, with fresh sessions, the rewritten heartbeat prompt and 12 added tools. The labels are mine, and the assistant ran Qwen-3.5 122B throughout.*
 
 The judge was more generous with the same 20 messages, rating 14 somewhat useful and 6 redundant, and agreed on the silences.
 
@@ -554,7 +554,7 @@ So I had GPT-6 Sol review every answer for correctness, checking each claim agai
 
 <br>
 
-| Measure | Whole week's chat | Shorter chat | Fresh sessions | Silence rule + prompt rewrite | Live-source checks |
+| Measure | Whole week's chat | Shorter chat | Fresh sessions | Prompt rewrite | Calendar and reminder checks |
 |---|---|---|---|---|---|
 | Heartbeats | 5 | 3 | 11 | 6 | 2 |
 | First-call prompt, median tokens | 188k | 53k | 21k | 21k | 27k |
@@ -568,7 +568,7 @@ So I had GPT-6 Sol review every answer for correctness, checking each claim agai
 | Correct silences | 0 | 2 | 1 | 3 | 0 |
 | Missed reminders | 0 | 0 | 0 | 2 | 0 |
 
-The silence-rule edit and the heartbeat-prompt rewrite were made together. The live-source instruction was paired with removing a stale schedule note. Quiet hours (times the assistant is told to stay silent), tool limits and available tools also changed during observation. Gateway restarts and shared model-server load further limit comparisons between phases. The changes were observed live and overlapped, so none was tested on its own.
+The `NO_REPLY` edit was part of a broader rewrite of the heartbeat prompt. The calendar and reminder instruction was paired with removing a stale schedule note. Quiet hours (times the assistant is told to stay silent), tool limits and available tools also changed during observation. Gateway restarts and shared model-server load further limit comparisons between phases. The changes were observed live and overlapped, so none was tested on its own.
 
 </details>
 
