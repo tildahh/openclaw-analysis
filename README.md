@@ -168,20 +168,20 @@ I wrote an [observer plugin](observer/) that names each run, fills in its reques
 
 | Trace detail | Default export | With the plugin |
 |---|---|---|
-| Root span name | `openclaw.harness.run` or `openclaw.message.processed` | Heartbeat, Conversation, Scheduled task or Evaluation |
-| `input.value` and `output.value` | Missing | The request and the final reply |
+| ① Root span name | `openclaw.harness.run` or `openclaw.message.processed` | Heartbeat, Conversation, Scheduled task or Evaluation |
+| ② `input.value` and `output.value` | Missing | The request and the final reply |
+| ③ Tool names | Every tool span is named `openclaw.tool.execution`, with the tool's name only in its attributes | In the readable export, each step is named for the tool that ran, such as `read` or `apple_calendar_events` |
+| ④ Token counts | Aggregate usage counted as an extra model call | Per-call usage, with the aggregate kept as a diagnostic counter |
+| ⑤ Recorded reasoning | Not exported | Optional, bounded and credential-redacted |
 | `session.id` | Missing | One identifier per conversation, so its turns group together |
-| Tool names | Every tool span is named `openclaw.tool.execution`, with the tool's name only in its attributes | In the readable export, each step is named for the tool that ran, such as `read` or `apple_calendar_events` |
-| Token counts | Aggregate usage counted as an extra model call | Per-call usage, with the aggregate kept as a diagnostic counter |
-| Recorded reasoning | Not exported | Optional, bounded and credential-redacted |
 
-Two runs in Phoenix's trace list, a heartbeat and a question about this week's readings:
+Two runs in Phoenix's trace list, a heartbeat and a question about this week's readings (numbers match the table):
 
 <table>
   <tr><th>Default export</th></tr>
-  <tr><td><img src="figures/trace-list-default.png" width="100%" alt="Phoenix trace list for the default export: two runs of kind unknown, named openclaw.harness.run and openclaw.message.processed, with no input or output."></td></tr>
+  <tr><td><img src="figures/trace-list-default.png" width="100%" alt="Phoenix trace list for the default export: two runs of kind unknown, named openclaw.harness.run and openclaw.message.processed, with no input or output. Outline 1 marks the name column and outline 2 the input and output columns."></td></tr>
   <tr><th>Readable export</th></tr>
-  <tr><td><img src="figures/trace-list-readable.png" width="100%" alt="The same two runs in the readable export: both of kind agent, named Heartbeat · Coursework reminder and Coursework · This week's readings, each showing its request and the start of its reply."></td></tr>
+  <tr><td><img src="figures/trace-list-readable.png" width="100%" alt="The same two runs in the readable export: both of kind agent, named Heartbeat · Coursework reminder and Coursework · This week's readings, each showing its request and the start of its reply. Outlines 1 and 2 mark the same columns."></td></tr>
 </table>
 
 *The readable export is the plugin's record of each run, re-exported offline.*
@@ -194,8 +194,8 @@ Inside the readings run, the default export already records each tool call's par
     <th width="50%">Readable export</th>
   </tr>
   <tr>
-    <td><img src="figures/trace-tree-default.png" width="100%" alt="The first steps of the readings run in the default export: a root named openclaw.message.processed, an extra openclaw.model.usage span holding the run's total of 174,107 tokens, then alternating openclaw.model.call and openclaw.tool.execution spans, with the 131 ms calendar lookup highlighted."></td>
-    <td><img src="figures/trace-tree-readable.png" width="100%" alt="The same steps in the readable export: a root named Coursework · This week's readings, then numbered steps such as 01. Model · choose next step, 02. Tool · read and 03. Tool · apple_calendar_events, with recorded reasoning under each model call and the same calendar lookup highlighted."></td>
+    <td><img src="figures/trace-tree-default.png" width="100%" alt="The first steps of the readings run in the default export: a root named openclaw.message.processed, an extra openclaw.model.usage span holding the run's total of 174,107 tokens, then alternating openclaw.model.call and openclaw.tool.execution spans. Outline 4 marks the openclaw.model.usage span and outline 3 the highlighted 131 ms calendar lookup."></td>
+    <td><img src="figures/trace-tree-readable.png" width="100%" alt="The same steps in the readable export: a root named Coursework · This week's readings, then numbered steps such as 01. Model · choose next step, 02. Tool · read and 03. Tool · apple_calendar_events, with recorded reasoning under each model call. Outline 3 marks the same calendar lookup, highlighted, and outline 5 the first recorded reasoning."></td>
   </tr>
 </table>
 
