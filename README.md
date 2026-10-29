@@ -171,7 +171,7 @@ I wrote an [observer plugin](observer/) that names each run, fills in its reques
 | Root span name | `openclaw.harness.run` or `openclaw.message.processed` | Heartbeat, Conversation, Scheduled task or Evaluation |
 | `input.value` and `output.value` | Missing | The request and the final reply |
 | `session.id` | Missing | One identifier per conversation, so its turns group together |
-| Tool names | Every tool span is `openclaw.tool.execution` | In the readable export, each step is named for the tool that ran, such as `read` or `apple_calendar_events` |
+| Tool names | Every tool span is named `openclaw.tool.execution`, with the tool's name only in its attributes | In the readable export, each step is named for the tool that ran, such as `read` or `apple_calendar_events` |
 | Token counts | Aggregate usage counted as an extra model call | Per-call usage, with the aggregate kept as a diagnostic counter |
 | Recorded reasoning | Not exported | Optional, bounded and credential-redacted |
 
@@ -186,7 +186,7 @@ Two runs in Phoenix's trace list, a heartbeat and a question about this week's r
 
 *The readable export is the plugin's record of each run, re-exported offline.*
 
-Inside the readings run, every model step is named `openclaw.model.call` and every tool step `openclaw.tool.execution`. The readable export numbers the steps, names each for what it did and shows the recorded reasoning under each model call:
+Inside the readings run, the default export already records each tool call's parameters and result, but every step in the tree is named `openclaw.model.call` or `openclaw.tool.execution`, so you have to open each one to follow the run. The readable export numbers the steps and names each for what it did, with the recorded reasoning under each model call:
 
 <table>
   <tr>
@@ -194,10 +194,12 @@ Inside the readings run, every model step is named `openclaw.model.call` and eve
     <th width="50%">Readable export</th>
   </tr>
   <tr>
-    <td><img src="figures/trace-tree-default.png" width="100%" alt="The first steps of the readings run in the default export: a root named openclaw.message.processed, an extra openclaw.model.usage span holding the run's total of 174,107 tokens, then alternating openclaw.model.call and openclaw.tool.execution spans."></td>
-    <td><img src="figures/trace-tree-readable.png" width="100%" alt="The same steps in the readable export: a root named Coursework · This week's readings, then numbered steps such as 01. Model · choose next step, 02. Tool · read and 03. Tool · apple_calendar_events, with recorded reasoning under each model call."></td>
+    <td><img src="figures/trace-tree-default.png" width="100%" alt="The first steps of the readings run in the default export: a root named openclaw.message.processed, an extra openclaw.model.usage span holding the run's total of 174,107 tokens, then alternating openclaw.model.call and openclaw.tool.execution spans, with the 131 ms calendar lookup highlighted."></td>
+    <td><img src="figures/trace-tree-readable.png" width="100%" alt="The same steps in the readable export: a root named Coursework · This week's readings, then numbered steps such as 01. Model · choose next step, 02. Tool · read and 03. Tool · apple_calendar_events, with recorded reasoning under each model call and the same calendar lookup highlighted."></td>
   </tr>
 </table>
+
+*The highlighted row is the same 131 ms calendar lookup in both.*
 
 <a id="observer-plugin"></a>
 <details>
