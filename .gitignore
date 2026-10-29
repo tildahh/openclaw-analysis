@@ -29,7 +29,10 @@
 !/figures/model-and-harness-v2.png
 !/figures/model-completion-time.png
 !/figures/runtime-distribution.png
-!/figures/trace-readable-export.png
+!/figures/trace-list-default.png
+!/figures/trace-list-readable.png
+!/figures/trace-tree-default.png
+!/figures/trace-tree-readable.png
 !/figures/heartbeat-before-after.png
 
 __pycache__/

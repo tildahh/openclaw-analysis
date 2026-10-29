@@ -177,8 +177,6 @@ def draw_plot(models):
                 ha="left", va="center", arrowprops={"arrowstyle": "->", "color": MUTED, "lw": 1.1})
     chosen = next(row for row in models if row["model"] == "GLM 5.3 Flash 320B")
     ax.scatter(chosen["median_minutes"], chosen["mean_task_completion"], s=420, facecolor="none", edgecolor=INK, linewidth=1.2, zorder=5)
-    ax.annotate("chosen", (chosen["median_minutes"], chosen["mean_task_completion"]), xytext=(11, -14), textcoords="offset points",
-                fontsize=9.5, color=MUTED, fontstyle="italic")
     place_title(fig, "Six local models: task completion vs. time per task")
     fig.subplots_adjust(left=0.1, right=RIGHT, top=plot_top(fig), bottom=plot_bottom(fig))
     fig.canvas.draw()
