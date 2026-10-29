@@ -2,7 +2,7 @@
 
 *A practical guide to evaluating an agent that acts on a schedule.*
 
-I run [OpenClaw](https://github.com/openclaw/openclaw), an open-source personal assistant, on my own hardware with a locally hosted model. Every 30 minutes a scheduled check, called a heartbeat, wakes it to decide whether anything needs my attention. It kept repeating old information or burying useful updates in long messages. Other users have hit the same delivery rule, where only an exact silence keyword keeps a reply from being sent: in one [GitHub issue](https://github.com/openclaw/openclaw/issues/142588), 26/27 scheduled checks sent messages about what the assistant planned to do, without a result.
+I run [OpenClaw](https://github.com/openclaw/openclaw), an open-source personal assistant, on my own hardware with a locally hosted model. Every 30 minutes a scheduled check, called a heartbeat, wakes it to decide whether anything needs my attention. It kept repeating old information or burying useful updates in long messages. Other users have hit similar problems: in one [GitHub issue](https://github.com/openclaw/openclaw/issues/142588), 26/27 scheduled checks sent messages about what the assistant planned to do, without a result.
 
 This guide is the method I used to find the causes and test fixes, with OpenClaw and [Phoenix](https://github.com/Arize-ai/phoenix), an open-source tracing and evaluation tool. The steps apply to any agent that calls tools on a schedule, and the traces are standard [OpenTelemetry](https://opentelemetry.io/), so other tracing backends can read them too.
 
@@ -11,7 +11,7 @@ This guide is the method I used to find the causes and test fixes, with OpenClaw
 | Finding | Evidence |
 |---|---|
 | Each heartbeat was re-reading the whole week's chat | A fresh session for each heartbeat cut the first prompt (188k → 21k tokens) |
-| All five baseline messages reached me by mistake | The instruction said to end with `NO_REPLY`, and OpenClaw suppresses a message only when the whole reply is exactly `NO_REPLY` |
+| All messages from the first five heartbeats reached me by mistake | The instruction said to end with `NO_REPLY`, and OpenClaw suppresses a message only when the whole reply is exactly `NO_REPLY` |
 | The LLM judge and I agreed on 20/24 heartbeats | Cohen's κ 0.73, agreement corrected for chance<br>Its worst miss called a missed reminder a correct silence |
 | Choosing GLM over DeepSeek cut the time per task almost in half | **GLM 5.3 Flash:** 21/27 complete, 2.1 min per task<br>**DeepSeek:** 24/27 complete, 3.8 min per task<br>The completion gap could be chance (p = 0.47) |
 
@@ -377,7 +377,7 @@ Before asking a model to grade the assistant, label what it should have done. Fo
 | **It sent a message** | `useful`, or `somewhat_useful` when buried in a long message | `redundant` |
 | **It stayed silent** | `missed` | `correct_silence` |
 
-Add `unsure` for runs where the evidence cannot support a decision, and count a crash or timeout separately from a deliberate silence. The counts for each configuration are in the [appendix](#heartbeat-observation-records).
+Add `unsure` for runs where the evidence cannot support a decision, and count a crash or timeout separately from a deliberate silence.
 
 ### Check the judge against your labels
 
@@ -489,7 +489,7 @@ tool result    inbound.durationSeconds: 109620   (30 h 27 m)
 final answer   "2 stops, ~22 h 27 m travel."
 ```
 
-So I had GPT-6 Sol review every answer for correctness, checking each claim against the sources the assistant had saved. It was stricter than the task called for, expecting source and reference checks beyond what the assistant could access, and found a contradicted claim in 87/159 answers.
+So I had GPT-6 Sol review every answer for correctness, checking each claim against the sources the assistant had saved. It was stricter than the task called for, expecting source and reference checks beyond what the assistant could access, and found a contradicted claim in 87/159 answers. I checked its verdicts myself.
 
 - **Flights:** all 18 answers were marked complete, but 17 contradicted the search results and none was confirmed correct.
 - **GLM and DeepSeek:** each had 12 answers with a contradicted claim, so the review didn't change the switch. GLM's slowest attempt took 6.5 minutes, against DeepSeek's 18 and one timeout.
@@ -498,11 +498,11 @@ So I had GPT-6 Sol review every answer for correctness, checking each claim agai
 
 Choose the metrics that tell you which part of the system needs improvement. I used five built-in evaluators with GPT-6 Sol, keeping their default instructions:
 
-- **Task completion**: Did it fulfill the user's request fully?
-- **Faithfulness**: Is the response grounded in the information it retrieved?
-- **Tool selection**: Did it choose the right tool for the job?
-- **Retrieval relevance**: Did the chosen tools return relevant information?
-- **Tool response handling**: Did it use that information correctly?
+- **Task completion:** Did it fulfill the user's request fully?
+- **Faithfulness:** Is the response grounded in the information it retrieved?
+- **Tool selection:** Did it choose the right tool for the job?
+- **Retrieval relevance:** Did the chosen tools return relevant information?
+- **Tool response handling:** Did it use that information correctly?
 
 At first, tool results were cut off at 8,192 characters and some answers were shortened. I rebuilt the inputs to include AGENTS.md (the assistant's instructions file), its full answers and tool results of up to 150,000 characters.
 
@@ -536,8 +536,8 @@ Faithfulness, tool response handling and retrieval relevance need tool results, 
 
 ## What I would do next
 
-- Does a log of sent notifications, read before each decision, stop the repeated reminders? Add one and rerun the heartbeat checks.
-- Does telling the assistant to open the documents it finds bring back the reading list without losing the deadline fix? The final-answer check regressed the list because the run only read index pages.
+- Does a sent-message log, read before each decision, stop the repeated reminders? Add one and rerun the heartbeat checks.
+- Does telling the assistant to open the documents it finds bring back the reading list without losing the deadline fix? In its one run, the final-answer check lost the list after reading only index pages.
 - Do the judges with repaired inputs agree with the correctness review on the next pass through the nine tasks?
 - How much do live sources move between runs? Record the timestamps of flight searches and course pages so that reruns can be compared.
 
@@ -549,7 +549,7 @@ Faithfulness, tool response handling and retrieval relevance need tool results, 
 
 <br>
 
-| Measure | Whole week's chat | /new chat | Fresh sessions | Silence rule + prompt rewrite | Live-source checks |
+| Measure | Whole week's chat | Shorter chat | Fresh sessions | Silence rule + prompt rewrite | Live-source checks |
 |---|---|---|---|---|---|
 | Heartbeats | 5 | 3 | 11 | 6 | 2 |
 | First-call prompt, median tokens | 188k | 53k | 21k | 21k | 27k |
@@ -563,7 +563,7 @@ Faithfulness, tool response handling and retrieval relevance need tool results, 
 | Correct silences | 0 | 2 | 1 | 3 | 0 |
 | Missed reminders | 0 | 0 | 0 | 2 | 0 |
 
-The manual `/new` reset was separate from enabling fresh sessions and had already stopped verbatim copying. The silence-rule edit and the heartbeat-prompt rewrite were made together. The live-source instruction was paired with removing a stale schedule note. Quiet hours (times the assistant is told to stay silent), tool limits and available tools also changed during observation. Reporting changes, gateway restarts and shared model-server load further limit comparisons between phases. The changes were observed live and overlapped, so none was tested on its own.
+The silence-rule edit and the heartbeat-prompt rewrite were made together. The live-source instruction was paired with removing a stale schedule note. Quiet hours (times the assistant is told to stay silent), tool limits and available tools also changed during observation. Gateway restarts and shared model-server load further limit comparisons between phases. The changes were observed live and overlapped, so none was tested on its own.
 
 </details>
 
