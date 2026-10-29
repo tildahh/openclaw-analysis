@@ -11,7 +11,7 @@ This guide is the method I used to find the causes and test fixes, with OpenClaw
 | Finding | Evidence |
 |---|---|
 | Each heartbeat was re-reading the whole week's chat | A fresh session for each heartbeat cut the first prompt (188k → 21k tokens) |
-| All messages from the first five heartbeats reached me by mistake | The instruction said to end with `NO_REPLY`, and OpenClaw suppresses a message only when the whole reply is exactly `NO_REPLY` |
+| All messages from the first five heartbeats reached me by mistake | The heartbeat instruction said to end with `NO_REPLY`, and OpenClaw suppresses a message only when the whole reply is exactly `NO_REPLY` |
 | The LLM judge and I agreed on 20/24 heartbeats | Cohen's κ 0.73, agreement corrected for chance<br>Its worst miss called a missed reminder a correct silence |
 | Choosing GLM over DeepSeek cut the time per task almost in half | **GLM 5.3 Flash:** 21/27 complete, 2.1 min per task<br>**DeepSeek:** 24/27 complete, 3.8 min per task<br>The completion gap could be chance (p = 0.47) |
 
