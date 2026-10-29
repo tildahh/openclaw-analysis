@@ -181,7 +181,7 @@ Two runs in Phoenix's trace list, a heartbeat and a question about this week's r
   <tr><th>Default export</th></tr>
   <tr><td><img src="figures/trace-list-default.png" width="100%" alt="Phoenix trace list for the default export: two runs of kind unknown, named openclaw.harness.run and openclaw.message.processed, with no input or output. Outline 1 marks the name column and outline 2 the input and output columns."></td></tr>
   <tr><th>Readable export</th></tr>
-  <tr><td><img src="figures/trace-list-readable.png" width="100%" alt="The same two runs in the readable export: both of kind agent, named Heartbeat · Coursework reminder and Coursework · This week's readings, each showing its request and the start of its reply. Outlines 1 and 2 mark the same columns."></td></tr>
+  <tr><td><img src="figures/trace-list-readable.png" width="72%" alt="The same two runs in the readable export: both of kind agent, named Heartbeat and Conversation, each showing its request and the start of its reply. Outlines 1 and 2 mark the same columns."></td></tr>
 </table>
 
 *The readable export is the plugin's record of each run, re-exported offline.*
@@ -412,15 +412,11 @@ The changes overlapped, so none was tested on its own. The counts for every phas
 
 After the changes, check another sample. Does the assistant still look up current information? Does it send fewer unnecessary messages? Is it missing anything?
 
-I labeled 23 heartbeats the following day:
+I labeled 23 heartbeats the following day. All 23 checked the calendar and reminders, none appended `NO_REPLY` to a longer message and none missed a reminder, but 11 still sent a message I did not need:
 
-- All 23 checked the calendar and reminders, none appended `NO_REPLY` to a longer message, and none missed anything.
-- 9 sent a message worth hearing, and 3 stayed correctly silent.
-- 11 still sent a message I did not need.
+![Each heartbeat drawn as a square and coloured by my label. Before: 5 heartbeats, all unnecessary messages. After: 23 heartbeats, with 9 messages worth hearing, 3 correct silences and 11 unnecessary messages. No heartbeat on either day missed a reminder.](figures/heartbeat-before-after.png)
 
-![Four before-and-after comparisons. Context at the start of each run: 188k tokens before, 27k after. Messages delivered with NO_REPLY attached: 5 of 5 before, 0 of 20 after. Heartbeats worth hearing: 0 of 5 before, 9 of 23 after. Correct silences: 0 of 5 before, 3 of 23 after.](figures/heartbeat-before-after.png)
-
-*Before: the first five heartbeats, each carrying the whole week's chat. After: 23 heartbeats on the day after the changes, with fresh sessions, the rewritten silence rule, source checks and 12 added tools, whose definitions raised the first prompt (21k → 27k tokens). Worth hearing and correct silences are my labels, and the assistant ran Qwen-3.5 122B throughout.*
+*Before: the first five heartbeats, each carrying the whole week's chat. After: 23 heartbeats on the day after the changes, with fresh sessions, the rewritten silence rule, source checks and 12 added tools. The labels are mine, and the assistant ran Qwen-3.5 122B throughout.*
 
 The judge was more generous with the same 20 messages, rating 14 somewhat useful and 6 redundant, and agreed on the silences.
 
