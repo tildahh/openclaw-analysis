@@ -13,7 +13,7 @@ This guide is the method I used to find the causes and test fixes, with OpenClaw
 | Each heartbeat was re-reading the whole week's chat | A fresh session for each heartbeat cut the first prompt (188k → 21k tokens) |
 | All messages from the first five heartbeats reached me by mistake | The heartbeat instruction said to end with `NO_REPLY`, and OpenClaw suppresses a message only when the whole reply is exactly `NO_REPLY` |
 | The LLM judge and I agreed on 20/24 heartbeats | Cohen's κ 0.73, agreement corrected for chance<br>Its worst miss called a missed reminder a correct silence |
-| Choosing GLM over DeepSeek cut the time per task almost in half | **GLM 5.3 Flash:** 21/27 complete, 2.1 min per task<br>**DeepSeek:** 24/27 complete, 3.8 min per task<br>The completion gap could be chance (p = 0.47) |
+| Choosing GLM over DeepSeek cut the time per task almost in half | **GLM 5.3 Flash:** 21/27 complete, 2.1 min per task<br>**DeepSeek:** 24/27 complete, 3.8 min per task<br>The completion gap isn't significant (p = 0.47) |
 
 [![Scatter plot of six models by median task time and mean task-completion score. Qwen-3.6 35B: 1.76 minutes, 0.59; Qwen-3.5 122B: 2.73 minutes, 0.70; Nemotron 120B: 3.64 minutes, 0.67; Muse 30B: 6.28 minutes, 0.63; GLM 5.3 Flash 320B: 2.08 minutes, 0.78; DeepSeek V4 Flash 284B: 3.81 minutes, 0.89.](figures/model-completion-time.png)](figures/model-completion-time.png)
 
@@ -205,7 +205,7 @@ Inside the conversation, the plugin stops counting the run's tokens twice and sh
 
 <br>
 
-The plugin keeps the name it was written under, `phoenix-eval-observer`, from when it only recorded evaluation sessions. It has two parts. The **observer hooks** record each run's visible prompt, final reply, tool calls and timings to local JSONL files, with credentials redacted and system prompts, reasoning and media left out. The optional **live-export bridge** patches the installed OpenTelemetry exporter so the traces it already sends carry a readable root span, the request and reply, a session identifier and the tool names in each model call's messages. Nothing in the plugin changes a prompt, a tool call, the model, memory or the result, and a capture failure never blocks the run.
+The plugin's ID is `phoenix-eval-observer`. It has two parts. The **observer hooks** record each run's visible prompt, final reply, tool calls and timings to local JSONL files, with credentials redacted and system prompts, reasoning and media left out. The optional **live-export bridge** patches the installed OpenTelemetry exporter so the traces it already sends carry a readable root span, the request and reply, a session identifier and the tool names in each model call's messages. Nothing in the plugin changes a prompt, a tool call, the model, memory or the result, and a capture failure never blocks the run.
 
 ```mermaid
 %%{init: {"htmlLabels": false, "flowchart": {"htmlLabels": false}}}%%
@@ -364,7 +364,7 @@ If each run receives the full conversation, give it a fresh session. In OpenClaw
 "heartbeat": { "isolatedSession": true }
 ```
 
-Fresh sessions kept copying low and the first prompt small (188k → 21k tokens), but they did not stop all unnecessary messages.
+Fresh sessions kept copying low and the first prompt small (188k → 21k tokens).
 
 ### Scaffold: match the instructions to the delivery rule
 
@@ -404,7 +404,7 @@ Each change fixed one problem and exposed the next:
 | Rewritten heartbeat prompt | Messages with `NO_REPLY` attached | Two silences while an urgent reminder was due |
 | Calendar and reminders check before silence | Missed reminders | A reminder sent again after it had already gone out |
 
-The changes overlapped, so none was tested on its own. The counts for every phase are in the [appendix](#heartbeat-observation-records).
+The counts for every phase are in the [appendix](#heartbeat-observation-records).
 
 ### Repeat the checks in everyday use
 
@@ -450,7 +450,7 @@ Choose the metrics that tell you which part of the system needs improvement. I u
 - **Retrieval relevance:** Did the chosen tools return relevant information?
 - **Tool response handling:** Did it use that information correctly?
 
-At first, tool results were cut off at 8,192 characters and some answers were shortened. I rebuilt the inputs to include AGENTS.md (the assistant's instructions file), its full answers and tool results of up to 150,000 characters.
+Check what the judges receive. Mine got tool results cut off at 8,192 characters and shortened answers, so I rebuilt the inputs to include AGENTS.md (the assistant's instructions file), the full answers and tool results of up to 150,000 characters.
 
 How often each judge passed each model's answers, across three attempts at nine tasks:
 
@@ -480,7 +480,7 @@ My assistant often misread information it had already found, so I tested this in
 
 > "Before giving a final answer, check that it fulfills the user's request and that its decision-critical claims agree with the evidence you retrieved."
 
-I ran the original and revised instructions once on each task, so treat the differences as leads to recheck rather than measured effects. The revised instructions met 31/52 requirements and used about 6% more tokens.
+I ran each version once per task. The revised instructions met 31/52 requirements and used about 6% more tokens.
 
 - **Fixed:** it corrected an event deadline.
 - **Broke:** the weekly reading list. In the trace, the revised run read only the index pages and never opened the documents, so it returned no reading links.
@@ -499,9 +499,9 @@ I added 12 tools through [MCP](https://modelcontextprotocol.io/) (Model Context 
 To compare models, run each on the same tasks more than once. I tested six models on nine tasks, three attempts per task, including my assistant's model at the time, Qwen-3.5 122B. The [scatter plot at the top of this guide](#what-i-found) compares median time per task with the share of attempts an LLM judge marked complete.
 
 - **DeepSeek** had the highest completion share, 24/27 attempts, at about 3.8 minutes per task.
-- **GLM 5.3 Flash** completed 21/27 in about half the median time. With 27 attempts each, that gap could be chance (Fisher's exact test, p = 0.47), so speed decided my switch to GLM.
+- **GLM 5.3 Flash** completed 21/27 in about half the median time. With 27 attempts each, that gap isn't significant (Fisher's exact test, p = 0.47), so speed decided my switch to GLM.
 - **Qwen-3.6** was the fastest at 1.76 minutes and had the lowest completion share, 16/27.
-- **Muse 30B** was the slowest at 6.28 minutes. It is dense, using all 30B parameters for every token, while Qwen-3.6 uses 3B of its 35B, though hardware also differed.
+- **Muse 30B** was the slowest at 6.28 minutes. It is dense, using all 30B parameters for every token, while Qwen-3.6 uses 3B of its 35B.
 
 <a id="runtime-distribution"></a>
 
@@ -532,7 +532,7 @@ So I had GPT-6 Sol review every answer for correctness, checking each claim agai
 | **Repeats earlier messages** | Assembled context and the first model call's input | A fresh session per heartbeat (`isolatedSession: true`)<br>Compare context size and repeated text |
 | **Sends a message ending in `NO_REPLY`** | The exact final output, including text before `NO_REPLY` | Require the whole reply to be `NO_REPLY` when nothing warrants a message<br>Count missed reminders too |
 | **Stays silent when a reminder is due** | Calendar and reminder tool calls, their results, the final decision | Require current calendar and reminder lookups before choosing silence |
-| **Repeats a reminder already sent** | Earlier notifications and whether the model input includes them | A sent-message log the assistant checks before sending (not tested here) |
+| **Repeats a reminder already sent** | Earlier notifications and whether the model input includes them | A sent-message log the assistant checks before sending |
 | **Gives details that contradict its sources** | The final answer next to the exact fields its tools returned | A final check against retrieved evidence, then a full rerun to catch regressions |
 | **Takes too long or times out** | Run duration, time in model and tool calls, repeated calls | If model calls dominate, compare another model on the same tasks<br>Track individual waits as well as the median |
 | **Judge score conflicts with the evidence** | The judge's explanation, rubric and saved inputs | Supply the missing answer text, sources or user context, then rerun the judge on reviewed examples |
@@ -540,7 +540,7 @@ So I had GPT-6 Sol review every answer for correctness, checking each claim agai
 ## What I would do next
 
 - Does a sent-message log, read before each decision, stop the repeated reminders? Add one and rerun the heartbeat checks.
-- Does telling the assistant to open the documents it finds bring back the reading list without losing the deadline fix? In its one run, the final-answer check lost the list after reading only index pages.
+- Does telling the assistant to open the documents it finds bring back the reading list without losing the deadline fix?
 - Do the judges with repaired inputs agree with the correctness review on the next pass through the nine tasks?
 - How much do live sources move between runs? Record the timestamps of flight searches and course pages so that reruns can be compared.
 
@@ -628,7 +628,7 @@ The results describe each model together with its serving setup. Most runs used 
 
 <br>
 
-The repaired judge inputs use the trial's AGENTS.md, the captured request and the model-visible tool results. They are still partial records. The full system prompt was not captured. The input builder keeps limits of 20,000 characters for request context, 150,000 per tool result and 400,000 for combined context. A statement absent from that packet is not automatically false.
+The repaired judge inputs use the trial's AGENTS.md, the captured request and the model-visible tool results. They don't include the full system prompt. The input builder keeps limits of 20,000 characters for request context, 150,000 per tool result and 400,000 for combined context. A statement absent from that packet is not automatically false.
 
 The judge table's percentages come from the Phoenix dashboard, which gives a zero to every answer a judge could not score. The table leaves those zeros out for the three judges that need tool results. Token estimates are kept separate from directly reported usage.
 
