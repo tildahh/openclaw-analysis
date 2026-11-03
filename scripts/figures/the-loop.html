@@ -1,0 +1,120 @@
+<!doctype html>
+<!-- Editable source for figures/the-loop.png. Render it headlessly from the repo root (the tab title turns into
+     "ready: no overflow" once every label fits; any other title means a label overflowed):
+       "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --hide-scrollbars \
+         --window-size=1280,580 --force-device-scale-factor=2 --virtual-time-budget=10000 \
+         --screenshot=figures/the-loop.png "file://$PWD/scripts/figures/the-loop.html" -->
+<html><head><meta charset="utf-8">
+<title>The evaluation loop</title>
+<style>
+  @font-face { font-family: "Virgil"; src: url("https://cdn.jsdelivr.net/npm/@excalidraw/excalidraw@0.17.6/dist/excalidraw-assets/Virgil.woff2") format("woff2"); }
+  html, body { margin: 0; background: #fbfbf9; }
+  svg { display: block; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/roughjs@4.6.6/bundled/rough.js"></script>
+</head><body>
+<svg id="diagram" xmlns="http://www.w3.org/2000/svg" width="1280" height="580" viewBox="0 0 1280 580" role="img" aria-labelledby="diagram-title diagram-description">
+  <title id="diagram-title">The evaluation loop</title>
+  <desc id="diagram-description">Three setup steps in a row, enable tracing, start with deterministic checks and decide what messages you want to receive, lead into a loop of three steps. Use an LLM judge, change one thing at a time and repeat, which leads back to the judge.</desc>
+</svg>
+<script>
+// Colours and font match model-and-harness-v2.html and palette.py: blue for the loop, grey for the setup steps.
+const INK = "#1f2328", MUTED = "#6b7280", BLUE = "#2a78d6", CARD_STROKE = "#c8d6e8", TRIGGER_FILL = "#f3f4f6";
+const svg = document.getElementById("diagram"), sketch = rough.svg(svg);
+let seed = 1;
+
+/** Add a centred handwritten label and record the width it must fit in. */
+function addText(x, y, label, size, color, maxWidth) {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  for (const [key, value] of Object.entries({ x, y, fill: color, "font-size": size, "font-family": "Virgil, cursive",
+      "text-anchor": "middle" })) node.setAttribute(key, value);
+  node.dataset.maxWidth = maxWidth;
+  node.textContent = label;
+  svg.appendChild(node);
+}
+
+/** Path of a rounded rectangle, so sketched cards keep soft corners. */
+function roundedRect(x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2);
+  return `M${x + r} ${y} h${width - 2 * r} a${r} ${r} 0 0 1 ${r} ${r} v${height - 2 * r} a${r} ${r} 0 0 1 -${r} ${r} ` +
+         `h-${width - 2 * r} a${r} ${r} 0 0 1 -${r} -${r} v-${height - 2 * r} a${r} ${r} 0 0 1 ${r} -${r} z`;
+}
+
+/** Draw a sketched card centred on (cx, cy) with a two-line label, and return its bounds. */
+function drawCard(cx, cy, lines, stroke, fill, width = 300, height = 88) {
+  const x = cx - width / 2, y = cy - height / 2;
+  svg.appendChild(sketch.path(roundedRect(x, y, width, height, 14), { stroke, strokeWidth: 1.8, roughness: 0.7, seed: seed++,
+    fill, fillStyle: "solid" }));
+  lines.forEach((line, i) => addText(cx, cy + 0.5 + (i - (lines.length - 1) / 2) * 29, line, 23, INK, width - 28));
+  return { x, y, width, height };
+}
+
+/** True when a point lies inside a card's bounds grown by a margin. */
+function insideCard(point, card, margin = 12) {
+  return point[0] > card.x - margin && point[0] < card.x + card.width + margin &&
+         point[1] > card.y - margin && point[1] < card.y + card.height + margin;
+}
+
+/** Draw a short arrowhead at the end of a path, pointing along its last segment. */
+function drawArrowhead(points, color) {
+  const [x1, y1] = points[points.length - 3], [x2, y2] = points[points.length - 1];
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  for (const offset of [-0.45, 0.45]) svg.appendChild(sketch.line(x2, y2,
+    x2 - 12 * Math.cos(angle + offset), y2 - 12 * Math.sin(angle + offset), { stroke: color, strokeWidth: 2, roughness: 0.5, seed: seed++ }));
+}
+
+/** Draw a curved arrow along the loop's ellipse from one card's edge to the next card's edge. */
+function drawLoopArrow(ellipse, fromAngle, toAngle, fromCard, toCard) {
+  const points = [];
+  for (let degrees = fromAngle; degrees <= toAngle; degrees += 1) {
+    const radians = degrees * Math.PI / 180;
+    const point = [ellipse.cx + ellipse.rx * Math.cos(radians), ellipse.cy + ellipse.ry * Math.sin(radians)];
+    if (!insideCard(point, fromCard) && !insideCard(point, toCard)) points.push(point);
+  }
+  svg.appendChild(sketch.curve(points, { stroke: BLUE, strokeWidth: 2, roughness: 0.5, seed: seed++ }));
+  drawArrowhead(points, BLUE);
+}
+
+/** Draw a straight arrow between two points. */
+function drawStraightArrow([x1, y1], [x2, y2], color) {
+  svg.appendChild(sketch.line(x1, y1, x2, y2, { stroke: color, strokeWidth: 2, roughness: 0.5, seed: seed++ }));
+  drawArrowhead([[x1, y1], [(x1 + x2) / 2, (y1 + y2) / 2], [x2, y2]], color);
+}
+
+/** Draw the one-time setup steps, the three-step loop with its arrows, and check that every label fits. */
+function drawDiagram() {
+  // Setup happens once, left to right along the top, in grey.
+  const setup = [[140, ["Enable tracing"], 220], [470, ["Start with", "deterministic checks"], 300],
+                 [820, ["Decide what messages", "you want to receive"], 300]]
+    .map(([cx, lines, width]) => drawCard(cx, 95, lines, MUTED, TRIGGER_FILL, width, 88));
+  setup.slice(1).forEach((card, i) => drawStraightArrow([setup[i].x + setup[i].width + 8, 95], [card.x - 10, 95], MUTED));
+
+  // The loop repeats, in blue. Angles grow clockwise on screen because SVG's y axis points down.
+  const ellipse = { cx: 820, cy: 400, rx: 330, ry: 110 };
+  const steps = [[270, ["Use an LLM judge"]], [390, ["Change 1 thing", "at a time"]], [510, ["Repeat"]]];
+  const cards = steps.map(([degrees, lines]) => {
+    const radians = degrees * Math.PI / 180;
+    return drawCard(ellipse.cx + ellipse.rx * Math.cos(radians), ellipse.cy + ellipse.ry * Math.sin(radians), lines, CARD_STROKE, "#ffffff");
+  });
+  steps.forEach(([degrees], i) => {
+    const next = (i + 1) % steps.length;
+    drawLoopArrow(ellipse, degrees, i + 1 < steps.length ? steps[next][0] : steps[0][0] + 360, cards[i], cards[next]);
+  });
+
+  // The last setup step leads into the loop.
+  const last = setup[setup.length - 1], judge = cards[0];
+  drawStraightArrow([820, last.y + last.height + 8], [820, judge.y - 10], MUTED);
+
+  const overflow = [];
+  for (const node of svg.querySelectorAll("text")) {
+    const bounds = node.getBBox();
+    if (bounds.x < 8 || bounds.y < 8 || bounds.x + bounds.width > 1272 || bounds.y + bounds.height > 572 ||
+        bounds.width > Number(node.dataset.maxWidth)) overflow.push(node.textContent);
+  }
+  document.title = overflow.length ? "OVERFLOW: " + overflow.join(" | ") : "ready: no overflow";
+  document.body.dataset.render = overflow.length ? "overflow" : "ready";
+}
+
+document.fonts.load('23px "Virgil"').then(drawDiagram);
+</script>
+</body></html>

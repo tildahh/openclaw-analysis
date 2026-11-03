@@ -24,7 +24,7 @@ from matplotlib.offsetbox import AnnotationBbox, TextArea
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "evals"))
-from palette import BG, GRID, INK, MODELS, MUTED, DPI, RIGHT, WIDTH, legend_anchor, place_title, place_xlabel, plot_bottom, plot_top
+from palette import BG, GRID, INK, MODELS, MUTED, TEXT, DPI, RIGHT, WIDTH, legend_anchor, place_title, place_xlabel, plot_bottom, plot_top
 from publish_setup_view import MAKEUPS, SETUPS
 
 PUBLICATION = ROOT / "runs/model-comparison-20min-matched/publication"
@@ -157,8 +157,8 @@ def draw_plot(models):
     ax.grid(axis="x", color=GRID, linewidth=0.55, alpha=0.45, zorder=0)
     for spine in ax.spines.values():
         spine.set_visible(False)
-    place_xlabel(fig, "Median time per task (minutes)")
-    ax.set_ylabel("Share of attempts marked complete", fontsize=12, color=INK, labelpad=14)
+    place_xlabel(fig, "Median minutes per task")
+    ax.set_ylabel("Completion rate", fontsize=12, color=INK, labelpad=14)
     labels = []
     for row in models:
         x, y = row["median_minutes"], row["mean_task_completion"]
@@ -166,7 +166,8 @@ def draw_plot(models):
         ax.scatter(x, y, s=260, color=color, alpha=0.12, linewidth=0, zorder=2)
         ax.scatter(x, y, s=110, color=color, edgecolor=BG, linewidth=1.8, zorder=3)
         dx, dy, align = offsets[row["model"]]
-        name = TextArea(row["model"], textprops={"fontsize": 11, "fontweight": "bold", "color": color})
+        # Names stay in TEXT because the lighter model hues are too faint for text; the dot and leader carry the hue.
+        name = TextArea(row["model"], textprops={"fontsize": 11, "fontweight": "bold", "color": TEXT})
         label = AnnotationBbox(name, (x, y), xybox=(dx, dy), boxcoords="offset points",
                                box_alignment=({"left": 0, "center": 0.5, "right": 1}[align], 0.5),
                                frameon=False, pad=0,

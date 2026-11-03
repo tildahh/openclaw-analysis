@@ -2,7 +2,7 @@
 <!-- Editable source for model-and-harness-v2.png. Render it headlessly from the repo root (the tab title turns
      into "ready: no overflow" once every label fits; any other title means a label overflowed):
        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --hide-scrollbars \
-         --window-size=1200,512 --force-device-scale-factor=2 --virtual-time-budget=10000 \
+         --window-size=1040,540 --force-device-scale-factor=2 --virtual-time-budget=10000 \
          --screenshot=figures/model-and-harness-v2.png "file://$PWD/scripts/figures/model-and-harness-v2.html" -->
 <html><head><meta charset="utf-8">
 <title>The harness and the model</title>
@@ -13,9 +13,9 @@
 </style>
 <script src="https://cdn.jsdelivr.net/npm/roughjs@4.6.6/bundled/rough.js"></script>
 </head><body>
-<svg id="diagram" xmlns="http://www.w3.org/2000/svg" width="1200" height="512" viewBox="0 0 1200 512" role="img" aria-labelledby="diagram-title diagram-description">
+<svg id="diagram" xmlns="http://www.w3.org/2000/svg" width="1040" height="540" viewBox="112 56 1040 540" role="img" aria-labelledby="diagram-title diagram-description">
   <title id="diagram-title">The harness runs the assistant; a tracing backend records every step</title>
-  <desc id="diagram-description">A message or a scheduled heartbeat starts a run in the harness. The harness builds the context, in which conversation history is by far the largest part, and runs tools. Numbered arrows carry the context to the model, tool calls back, tool results out again, and the answer back, and the harness delivers the reply. A dashed frame around the harness and the model is the tracing backend, which records each model call and tool call as a span.</desc>
+  <desc id="diagram-description">A chat message or a scheduled heartbeat starts a run in the harness. The harness builds the context, in which conversation history is by far the largest part, and calls tools. Numbered arrows carry the context to the LLM, tool calls back, tool results out again, and the answer back, and the harness delivers the reply. A dashed frame around the harness and the LLM is the tracing backend. Along its bottom, a timeline shows one run containing an LLM call, a tool call and a second LLM call.</desc>
 </svg>
 <script>
 // Colour roles match scripts/figures/palette.py: blue for what you change (the harness), ink outline for what you swap
@@ -24,6 +24,7 @@ const INK = "#1f2328", MUTED = "#6b7280", BLUE = "#2a78d6", LIGHT_BLUE = "#bfd4e
       CARD_STROKE = "#c8d6e8", TRIGGER_FILL = "#f3f4f6", BODY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 const svg = document.getElementById("diagram"), sketch = rough.svg(svg);
 let seed = 1;
+const tooWide = [];  // numbered lines wider than the space they were given
 
 /** Add a text label with an optional handwritten face and width check. */
 function addText(x, y, label, size = 18, color = INK, handwritten = false, anchor = "start", maxWidth = 0, weight = "normal") {
@@ -33,6 +34,47 @@ function addText(x, y, label, size = 18, color = INK, handwritten = false, ancho
   if (maxWidth) node.dataset.maxWidth = maxWidth;
   node.textContent = label;
   svg.appendChild(node);
+}
+
+/** Add a centred line in which numbers are drawn as circled digits, so step numbers stand apart from the words. */
+function addNumberedText(cx, y, parts, size, color, weight = "normal", maxWidth = 0, numberColor = color) {
+  const radius = size * 0.62, gap = 5;
+  const pieces = parts.map(part => {
+    if (typeof part === "number") return { number: part, width: 2 * radius };
+    const node = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    for (const [key, value] of Object.entries({ y, fill: color, "font-size": size, "font-weight": weight, "font-family": BODY }))
+      node.setAttribute(key, value);
+    node.textContent = part;
+    svg.appendChild(node);
+    return { node, width: node.getComputedTextLength() };
+  });
+  const total = pieces.reduce((sum, piece) => sum + piece.width, 0) + gap * (pieces.length - 1);
+  if (maxWidth && total > maxWidth) tooWide.push(parts.join(" "));
+  let x = cx - total / 2;
+  for (const piece of pieces) {
+    if (piece.node) piece.node.setAttribute("x", x);
+    else {
+      const centerY = y - size * 0.36;
+      svg.appendChild(sketch.circle(x + radius, centerY, 2 * radius, { stroke: numberColor, strokeWidth: 1.4, roughness: 0.4, seed: seed++ }));
+      addText(x + radius, centerY + size * 0.3, String(piece.number), size - 3, numberColor, false, "middle", 0, "700");
+    }
+    x += piece.width + gap;
+  }
+}
+
+/** Draw a row of small labelled pills, each sized to its text, starting at (x, y). */
+function drawChips(x, y, labels) {
+  for (const label of labels) {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    for (const [key, value] of Object.entries({ x: x + 10, y: y + 15, fill: MUTED, "font-size": 14, "font-family": BODY }))
+      node.setAttribute(key, value);
+    node.textContent = label;
+    svg.appendChild(node);
+    const width = node.getComputedTextLength() + 20;
+    svg.insertBefore(sketch.path(roundedRect(x, y, width, 21, 10), { stroke: CARD_STROKE, strokeWidth: 1.2, roughness: 0.6,
+      seed: seed++, fill: HARNESS_FILL, fillStyle: "solid" }), node);
+    x += width + 8;
+  }
 }
 
 /** Path of a rounded rectangle, so sketched shapes keep soft corners instead of ruler-straight ones. */
@@ -70,34 +112,49 @@ function drawArrow(x1, y1, x2, y2, color, dashed = false) {
 
 /** Draw the triggers, the harness with its two jobs, the numbered loop with the model, and the tracing frame. */
 function drawDiagram() {
-  // Tracing frame: the recorder sees everything inside it, and nothing about the person outside it.
-  drawCard(360, 76, 772, 396, MUTED, "none", true, 1.5);
+  // Tracing frame: the recorder sees everything inside it, and nothing about the person outside it. Its left edge
+  // runs between the trigger labels and the arrowheads, so it crosses only the arrow shafts.
+  drawCard(348, 76, 784, 500, MUTED, "none", true, 1.5);
   addText(384, 452, "Tracing backend", 26, MUTED, true);
-  addText(600, 450, "records each model call and tool call as a span", 17, MUTED);
+
+  // What it records: one run, with a span for each call, in the order of the numbered steps above.
+  const spans = [["run", 384, 470, 1100, "#c9ccd1"], ["LLM", 398, 490, 700, "#4a4f57"], ["tool", 398, 712, 786, BLUE],
+                 ["LLM", 398, 798, 1080, "#4a4f57"]];
+  spans.forEach(([label, labelX, start, end, fill], i) => {
+    const top = 470 + i * 24;
+    addText(labelX, top + 12, label, 14, MUTED);
+    addRect(start, top, end - start, 14, fill);
+  });
+  for (const [number, x, row] of [[1, 478, 1], [2, 712, 1], [3, 786, 3], [4, 1092, 3]])
+    addNumberedText(x, 470 + row * 24 + 12, [number], 13, BLUE, "600");
 
   // Triggers, outside the frame.
-  drawCard(32, 118, 218, 108, MUTED, TRIGGER_FILL);
-  drawCard(54, 138, 30, 23, MUTED, "#ffffff");
-  drawLine(61, 162, 58, 171, MUTED);
-  drawLine(58, 171, 70, 163, MUTED);
-  addText(54, 204, "Your message", 26, INK, true, "start", 178);
+  drawCard(132, 118, 128, 108, MUTED, TRIGGER_FILL);
+  drawCard(151, 140, 90, 56, MUTED, "#ffffff");
+  drawLine(167, 196, 159, 212, MUTED);
+  drawLine(159, 212, 181, 196, MUTED);
+  drawLine(169, 160, 223, 160, MUTED);
+  drawLine(169, 176, 207, 176, MUTED);
   drawArrow(260, 160, 369, 160, MUTED);
+  addText(304, 148, "message", 15, MUTED, false, "middle");
   drawArrow(369, 206, 260, 206, BLUE);
-  addText(314, 229, "delivered", 15, BLUE, false, "middle");
+  addText(304, 229, "reply", 15, BLUE, false, "middle");
 
-  drawCard(32, 300, 218, 108, MUTED, TRIGGER_FILL);
-  svg.appendChild(sketch.circle(68, 328, 28, { stroke: MUTED, strokeWidth: 1.8, roughness: 0.5, seed: seed++ }));
-  drawLine(68, 328, 68, 319, MUTED);
-  drawLine(68, 328, 76, 332, MUTED);
-  addText(54, 374, "Heartbeat", 28, INK, true);
-  addText(54, 398, "Every 30 minutes", 17, MUTED);
+  drawCard(132, 300, 128, 108, MUTED, TRIGGER_FILL);
+  svg.appendChild(sketch.circle(196, 358, 46, { stroke: MUTED, strokeWidth: 1.8, roughness: 0.5, seed: seed++ }));
+  for (const bellX of [177, 215]) svg.appendChild(sketch.arc(bellX, 338, 22, 18, Math.PI, 2 * Math.PI, false,
+    { stroke: MUTED, strokeWidth: 1.8, roughness: 0.4, seed: seed++ }));
+  drawLine(181, 378, 174, 388, MUTED);
+  drawLine(211, 378, 218, 388, MUTED);
+  drawLine(196, 358, 196, 344, MUTED);
+  drawLine(196, 358, 207, 364, MUTED);
   drawArrow(260, 354, 369, 354, MUTED);
-  addText(314, 341, "starts a run", 15, MUTED, false, "middle");
+  addText(304, 341, "heartbeat", 15, MUTED, false, "middle");
 
   // The harness: the part you can change.
   drawCard(380, 100, 420, 312, BLUE, HARNESS_FILL);
   addText(404, 141, "The harness", 34, INK, true);
-  addText(776, 139, "OpenClaw", 17, MUTED, false, "end");
+  addText(776, 139, "OpenClaw", 22, MUTED, true, "end");
 
   drawCard(404, 160, 372, 140, CARD_STROKE, "#ffffff");
   addText(426, 193, "Builds context", 26, INK, true);
@@ -110,28 +167,27 @@ function drawDiagram() {
   });
 
   drawCard(404, 312, 372, 76, CARD_STROKE, "#ffffff");
-  addText(426, 344, "Runs tools", 26, INK, true);
-  addText(426, 372, "Files · calendar · reminders · web", 17, MUTED, false, "start", 330);
+  addText(426, 344, "Calls tools", 26, INK, true);
+  drawChips(426, 355, ["files", "calendar", "reminders", "web"]);
 
   // The model: the part you swap.
-  drawCard(900, 160, 190, 230, INK, "#ffffff");
-  addText(995, 229, "Model", 34, INK, true, "middle");
-  addText(995, 268, "Requests a tool", 18, MUTED, false, "middle", 170);
-  addText(995, 294, "or writes", 18, MUTED, false, "middle");
-  addText(995, 320, "an answer", 18, MUTED, false, "middle");
-  addText(995, 362, "repeats 2 and 3 as needed", 14, MUTED, false, "middle", 176);
+  drawCard(920, 160, 190, 230, INK, "#ffffff");
+  addText(1015, 258, "LLM", 34, INK, true, "middle");
+  // Step numbers are blue everywhere, so this note points at arrows 2 and 3 beside it.
+  addNumberedText(1015, 300, ["repeats", 2, "and", 3], 15, MUTED, "normal", 170, BLUE);
+  addText(1015, 322, "as necessary", 15, MUTED, false, "middle", 170);
 
   // The loop, numbered in the order a trace shows it.
-  const hops = [["1  context", 200, true], ["2  tool call", 255, false], ["3  tool result", 310, true], ["4  answer", 365, false]];
-  for (const [label, y, outward] of hops) {
-    if (outward) drawArrow(812, y, 888, y, BLUE); else drawArrow(888, y, 812, y, BLUE);
-    addText(850, y - 9, label, 14, BLUE, false, "middle", 96, "600");
-  }
+  const hops = [["context", 200, true], ["tool call", 255, false], ["tool result", 310, true], ["answer", 365, false]];
+  hops.forEach(([label, y, outward], i) => {
+    if (outward) drawArrow(812, y, 908, y, BLUE); else drawArrow(908, y, 812, y, BLUE);
+    addNumberedText(860, y - 9, [i + 1, label], 14, BLUE, "600", 104);
+  });
 
-  const overflow = [];
+  const overflow = [...tooWide];
   for (const node of svg.querySelectorAll("text")) {
     const bounds = node.getBBox();
-    if (bounds.x < 8 || bounds.y < 8 || bounds.x + bounds.width > 1192 || bounds.y + bounds.height > 504 ||
+    if (bounds.x < 120 || bounds.y < 64 || bounds.x + bounds.width > 1144 || bounds.y + bounds.height > 588 ||
         (node.dataset.maxWidth && bounds.width > Number(node.dataset.maxWidth))) overflow.push(node.textContent);
   }
   document.title = overflow.length ? "OVERFLOW: " + overflow.join(" | ") : "ready: no overflow";

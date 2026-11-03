@@ -17,7 +17,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
-from palette import BG, GRID, INK, MODELS, MUTED, DPI, RIGHT, WIDTH, legend_anchor, place_title, place_xlabel, plot_bottom, plot_top
+from palette import BG, GRID, INK, MODELS, MUTED, TEXT, DPI, RIGHT, WIDTH, legend_anchor, place_title, place_xlabel, plot_bottom, plot_top
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "results/model-completion-time.json"
@@ -74,7 +74,7 @@ def spread_points(ax, minutes, row):
 
 
 def draw_distribution(groups):
-    """Draw all 162 attempts with model colors, median ticks, and distinct timeout markers."""
+    """Draw all 162 attempts with model colors and median ticks, and label the attempt that timed out."""
     fig, ax = plt.subplots(figsize=(WIDTH, 7.2), dpi=DPI)
     fig.patch.set_facecolor(BG)
     ax.set_facecolor(BG)
@@ -84,12 +84,11 @@ def draw_distribution(groups):
     ordered = dict(sorted(groups.items(), key=lambda item: item[1]["median"]))  # fastest median at the top
     ax.set_yticks(range(6), list(ordered), fontsize=11, fontweight="bold")
     ax.tick_params(axis="both", length=0, pad=12, colors=MUTED)
-    for label, model in zip(ax.get_yticklabels(), ordered):
-        label.set_color(MODELS[model])
+    ax.tick_params(axis="y", colors=TEXT)  # names in TEXT, since the lighter model hues are too faint for text
     ax.grid(axis="x", color=GRID, linewidth=.75, zorder=0)
     for spine in ax.spines.values():
         spine.set_visible(False)
-    place_xlabel(fig, "Time per task (minutes)")
+    place_xlabel(fig, "Minutes per task")
     fig.subplots_adjust(left=.215, right=.905, top=plot_top(fig, legend=True), bottom=plot_bottom(fig))
     fig.canvas.draw()
     for y, (model, group) in enumerate(ordered.items()):
@@ -99,18 +98,16 @@ def draw_distribution(groups):
         ax.text(1.025, y, f"{group['median']:.2f} min", transform=ax.get_yaxis_transform(),
                 va="center", fontsize=10.5, color=INK)
         for minute, offset, attempt in zip(minutes, offsets, group["rows"]):
-            if attempt["execution_label"] == "TIMEOUT":
-                ax.scatter(minute, offset, s=75, marker="X", color=MODELS[model], edgecolor=BG, linewidth=.8, zorder=4)
-                ax.annotate(f"{minute:.2f} min", (minute, offset), xytext=(-8, 17), textcoords="offset points",
-                            ha="right", fontsize=10, color=INK)
-            else:
-                ax.scatter(minute, offset, s=POINT_SIZE, color=MODELS[model], edgecolor=BG, linewidth=.6, zorder=3)
+            ax.scatter(minute, offset, s=POINT_SIZE, color=MODELS[model], edgecolor=BG, linewidth=.6, zorder=3)
+            if attempt["execution_label"] == "TIMEOUT":  # drawn like every attempt, so a label says it timed out
+                ax.annotate(f"timed out at {minute:.2f} min", (minute, offset), xytext=(-8, 17), textcoords="offset points",
+                            ha="right", fontsize=10, color=INK,
+                            arrowprops={"arrowstyle": "-", "color": MUTED, "lw": .8, "relpos": (1, 0)})  # ties it to its dot
     ax.text(1.025, 1.045, "Median", transform=ax.transAxes, fontsize=10.5, color=MUTED)
     place_title(fig, "Task runtime distribution by model")
     fig.legend(handles=[Line2D([], [], marker="o", color=MUTED, linestyle="none", label="Attempt", markersize=6),
-                        Line2D([], [], marker="|", color=INK, linestyle="none", label="Median", markersize=13, markeredgewidth=2),
-                        Line2D([], [], marker="X", color=MUTED, linestyle="none", label="Timeout", markersize=8)],
-               loc="upper left", bbox_to_anchor=legend_anchor(fig), ncol=3, frameon=False, fontsize=11,
+                        Line2D([], [], marker="|", color=INK, linestyle="none", label="Median", markersize=13, markeredgewidth=2)],
+               loc="upper left", bbox_to_anchor=legend_anchor(fig), ncol=2, frameon=False, fontsize=11,
                labelcolor=INK, handletextpad=.5, columnspacing=2)
     for extension in ("png", "svg"):
         fig.savefig(FIGURE.with_suffix("." + extension), facecolor=BG)

@@ -34,6 +34,8 @@
 !/figures/trace-tree-default.png
 !/figures/trace-tree-readable.png
 !/figures/heartbeat-before-after.png
+!/figures/judge-pass-rates.png
+!/figures/the-loop.png
 
 __pycache__/
 .DS_Store
