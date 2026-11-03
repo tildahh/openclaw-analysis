@@ -1,6 +1,7 @@
 /*
 !/.gitignore
 !/.env.example
+!/LICENSE
 !/README.md
 !/requirements.txt
 

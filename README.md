@@ -14,6 +14,7 @@ My assistant's answers to everyday requests, such as planning a study week or fi
 |---|---|
 | Each heartbeat was re-reading the entire chat history | A fresh session for each heartbeat cut the first prompt (188k → 21k tokens) |
 | Heartbeat messages were reaching me by mistake | The harness only suppresses a message when it contains `NO_REPLY` and nothing else |
+| Every run in the default traces looked the same | I built an [observer plugin](#make-the-traces-readable) that names each run by what started it and shows what it was asked and what it answered |
 | A calibrated LLM judge agreed with my labels on 20/24 heartbeats | Cohen's κ 0.73, agreement corrected for chance |
 | Choosing GLM over DeepSeek cut the time per task almost in half | **GLM 5.3 Flash:** 21/27 complete, 2.1 min/task<br>**DeepSeek:** 24/27 complete, 3.8 min/task, *though the completion gap isn't significant (p = 0.47)* |
 
@@ -151,12 +152,12 @@ openclaw gateway restart
 
 ### Make the traces readable
 
-The root span stands for the whole run, and the model calls, tool calls and reasoning nest under it. By default, every root had a generic name and an empty request and reply, so I couldn't tell the runs apart in the list. I wrote an observer [plugin](observer/) that fixes this by adding [OpenInference](https://github.com/Arize-ai/openinference) attributes, the format Phoenix reads.
+The root span stands for the whole run, and the model calls, tool calls and reasoning nest under it. By default, every root had a generic name and no record of what the run was asked or what it answered, so I couldn't tell the runs apart in the list. I built an observer [plugin](observer/) that fixes this by adding [OpenInference](https://github.com/Arize-ai/openinference) attributes, the format Phoenix reads.
 
 | Trace detail | Default | With the plugin |
 |---|---|---|
 | ① Root span name | `openclaw.harness.run` or `openclaw.message.processed` | Heartbeat, Conversation, Scheduled task or Evaluation |
-| ② `input.value`, `output.value` | Missing | The initial request and the response |
+| ② `input.value`, `output.value` | Missing | What the run was asked and what it answered |
 | ③ Token counts | An extra span repeats the run's total, so tokens count twice | Usage per model call, with the total on the run |
 | ④ Reasoning | Not exported | Recorded under each model call when `captureReasoning` is `text` |
 | `session.id` | Missing | Each conversation has a unique ID |
@@ -277,11 +278,18 @@ flowchart TD
     linkStyle default stroke:#6B7280,stroke-width:1.5px
 ```
 
-The following [script](scripts/extract_heartbeats.py) retroactively pulls each heartbeat's recorded output, tool calls and token usage from OpenClaw's transcript store, and attempts to strip any contact information and credential patterns. Set `--host` to the SSH destination of the machine running OpenClaw.
+<details>
+<summary><b>Pull past heartbeats</b> (from OpenClaw's transcript store)</summary>
+
+<br>
+
+This [script](scripts/extract_heartbeats.py) retroactively pulls each heartbeat's recorded output, tool calls and token usage from OpenClaw's transcript store, and attempts to strip any contact information and credential patterns. Set `--host` to the SSH destination of the machine running OpenClaw.
 
 ```bash
 python3 -m scripts.extract_heartbeats --host user@host --since YYYY-MM-DD
 ```
+
+</details>
 
 The deterministic checks showed that my assistant was copying messages it had already sent, word for word, and appending `NO_REPLY`, which did not stop them from being delivered. That pointed at the harness, for the history it was feeding each run, and at the scaffold, for the wording of the heartbeat prompt. The fixes are in [Change one thing at a time](#change-one-thing-at-a-time).
 
@@ -309,13 +317,14 @@ I used GPT-6 Sol as the judge, with [this prompt](prompts/heartbeat-judge.md).
 | GPT-6 Sol | 20/24 (83%), Cohen's κ 0.73 |
 | Always `redundant` | 13/24 (54%) |
 
-Of its four disagreements, the worst approved a silence that missed a reminder. The judge reasoned that a chat reply minutes earlier had already mentioned it, but I count only a heartbeat message as a reminder. A judge that calls a missed reminder a correct silence hides the failure you are looking for, so read each disagreement as well as the rate.
+Read each disagreement as well as the rate. The worst of the four called a missed reminder a correct silence, which would hide the failure you are looking for.
 
 <details>
-<summary><b>The other three disagreements</b></summary>
+<summary><b>The four disagreements</b></summary>
 
 <br>
 
+- For the missed reminder, it reasoned that a chat reply minutes earlier had already mentioned it, but I count only a heartbeat message as a reminder.
 - It dismissed one message that I thought contained useful new information.
 - It was unsure about two silences I considered correct. Neither run had checked the calendar or reminders, so the judge had no evidence to decide with.
 
@@ -323,7 +332,7 @@ Of its four disagreements, the worst approved a silence that missed a reminder. 
 
 > [!TIP]
 > Save the judge's labels on the traces. In Phoenix they become annotations, so you can filter for every heartbeat labeled `redundant` and read the messages behind them.
-> The [judge script](scripts/judge_heartbeats.py) uploads labeled cases as a dataset, runs the judge as an experiment and scores it against your labels. How I chose the judge model is in the [appendix](#heartbeat-judge-methodology).
+> The [judge script](scripts/judge_heartbeats.py) runs the judge and scores it against your labels, and the [appendix](#heartbeat-judge-methodology) explains how I chose the judge model.
 
 ## Change one thing at a time
 
@@ -343,7 +352,7 @@ When a scheduled run copies an earlier message, check how much history went into
 
 *The assembled-context span of one heartbeat.*
 
-If each run receives the full conversation, give it a fresh session. In OpenClaw, that takes one setting in the heartbeat configuration.
+Starting each heartbeat in a fresh session fixes this. In OpenClaw, that takes one setting in the heartbeat configuration.
 
 ```json
 "heartbeat": { "isolatedSession": true }
@@ -353,11 +362,12 @@ Fresh sessions cut the copying and shrank the first prompt (188k → 21k tokens)
 
 ### Scaffold: ask for silence the way the harness expects
 
-My old prompt told the model to *end with* `NO_REPLY`, so it wrote a summary first, added the token, and the whole message was delivered. The fix was one line of the heartbeat prompt.
+My old prompt told the model to *end with* `NO_REPLY`, so it wrote a summary first, added the token, and the whole message was delivered. The fix was one sentence of the heartbeat prompt.
 
 ```diff
 - For no meaningful change, end with exactly NO_REPLY.
-+ For no meaningful change, the entire reply is exactly NO_REPLY: nothing before it and nothing after it.
++ For no meaningful change, the entire reply is exactly NO_REPLY:
++ nothing before it and nothing after it.
 ```
 
 <details>
@@ -388,11 +398,11 @@ After the changes, label a new sample the same way. Of the 23 heartbeats I label
 
 ![Each heartbeat drawn as a square and coloured by my label. Before: 5 heartbeats, all unnecessary messages. After: 23 heartbeats, with 9 messages worth hearing, 3 correct silences and 11 unnecessary messages. No heartbeat on either day missed a reminder.](figures/heartbeat-before-after.png)
 
-*The before row is the first five heartbeats, each carrying the whole week's chat. The after row has fresh sessions, the rewritten heartbeat prompt and 12 added tools. The assistant ran Qwen-3.5 122B throughout.*
+*Both rows ran Qwen-3.5 122B, before the switch to GLM.*
 
 ---
 
-## Write your own benchmark
+## 🧪 Write your own benchmark
 
 The heartbeat work revealed why my assistant repeated itself, sent messages with `NO_REPLY` appended and missed a reminder. Comparing instructions, tools and models on everyday requests needs the same tasks every time, so I built a benchmark from nine tasks I actually want my assistant to do.
 
@@ -450,7 +460,7 @@ With the benchmark and judges in place, I changed one thing at a time. Make each
 
 My assistant often misread information it had already found, so I tested an instruction to check each answer before sending it. The check asks whether the answer covers the whole request and whether its dates, prices and time slots match what the assistant retrieved.
 
-I ran each version once per task. The revised instructions used about 6% more tokens.
+I ran each version once per task, and the check added about 6% more tokens.
 
 - **Fixed:** it corrected an event deadline.
 - **Broke:** finding this week's course readings. In the trace, the revised run read only the course's index pages and never opened the documents, so it returned no reading links.
