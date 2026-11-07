@@ -552,51 +552,28 @@ To choose between GPT-6 Sol and GPT-6 Astra, each scored a separate set of 24 ca
 </details>
 
 <details>
-<summary><b>Task experiment records</b></summary>
-
-<br>
-
-A pass is one run through all nine tasks, and an attempt is one task in one pass.
-
-| Comparison | Repetitions |
-|---|---|
-| Baseline prompt versus final-answer check | One pass per condition across nine tasks |
-| Baseline prompt with 12 added tools | Three passes across nine tasks |
-| Six-model comparison | Three passes per model across nine tasks |
-
-The model comparison planned 162 attempts, and 159 produced an answer. It includes a replacement run for a Qwen setup failure, so its population differs from the original tool comparison.
-
-Live flight, calendar and web results could change between attempts, since external sources were not frozen. Requests went through a separate test instance of the assistant, so they were not exact replays of the production chat. These limits apply even when the dataset and model were unchanged.
-
-<a id="runtime-distribution-methodology"></a>
-
-**Runtime distribution.** The [runtime figure](#runtime-distribution) uses the same 27 attempts per model as the scatter plot. The timeout remains in the median. Vertical spacing separates nearby points. Times exclude setup.
-
-</details>
-
-<details>
 <summary><b>Model observations and serving conditions</b></summary>
 
 <br>
 
 The results describe each model together with its serving setup. Most runs used a 20-minute task limit. All Qwen-3.5 passes and Qwen-3.6's first pass used 10 minutes and did not reach that limit. GLM 5.3 Flash 320B and DeepSeek V4 Flash 284B ran across two DGX Spark machines, and the other models ran on one. Every pass requested OpenClaw's medium reasoning setting, which GLM's and DeepSeek's servers mapped to high effort.
 
-- **Time spent generating text.** GLM generated about 98 characters per second, DeepSeek 147 and Muse 34. Muse model calls took about 35 seconds against GLM's 10. Most task time was in model calls, with tools taking seconds.
-- **Model architecture.** Muse is dense, using all 30B parameters for each token. Qwen-3.6 has 35B total parameters and uses 3B per token. Hardware and serving differences prevent attributing the timing gap to architecture alone.
-- **Invalid tool calls.** Muse produced garbled calls in 7/27 attempts and repaired 12/19 rejected calls on the next turn. Another 12 calls ran with an argument dropped, including a 60-day calendar request reduced to today. Twice, tool-call markup was delivered as the answer. Qwen-3.6 had one rejected call and repaired it; the other models had none.
-- **Concurrent tool calls.** DeepSeek and Qwen-3.6 sent several calls together in 70–80% of their tool turns. Nemotron called tools sequentially.
-- **Links absent from retrieved evidence.** Of Nemotron's links, 2/29 were absent from its sources, and 4/34 in its earlier 10-minute passes, including a malformed paper link. Other models used retrieved links or built them from retrieved identifiers.
-- **Form interactions.** Qwen-3.6 filled 12 hackathon-registration fields and requested missing details before offering submission. No other model filled a form.
-- **Explicit uncertainty.** DeepSeek stated what it could not verify in 6/27 answers. No other model did so more than three times.
-
-</details>
-
-<details>
-<summary><b>Judge inputs</b></summary>
-
-<br>
-
-The repaired inputs also include the captured request and use the tool results the model saw. They leave out the full system prompt. The input builder caps request context at 20,000 characters and combined context at 400,000. A statement absent from that packet is not automatically false.
+- **Time spent generating text.**
+    - GLM generated about 98 characters per second, DeepSeek 147 and Muse 34.
+    - Muse model calls took about 35 seconds against GLM's 10.
+    - Most task time was in model calls, with tools taking seconds.
+- **Invalid tool calls.**
+    - Muse produced garbled calls in 7/27 attempts and repaired 12/19 rejected calls on the next turn.
+    - Another 12 calls ran without a required argument. Twice, tool-call markup was delivered as the answer.
+    - Qwen-3.6 had one rejected call and repaired it; the other models had none.
+- **Concurrent tool calls.**
+    - DeepSeek and Qwen-3.6 sent several calls together in 70–80% of their tool turns.
+    - Nemotron called tools sequentially.
+- **Form interactions.**
+    - Qwen-3.6 filled out 12 registration fields on a form and requested missing details before offering submission.
+    - No other model filled a form.
+- **Explicit uncertainty.**
+    - DeepSeek stated what it could not verify in 6/27 answers. No other model did so more than three times.
 
 </details>
 
